@@ -269,6 +269,7 @@ class MainActivity : AppCompatActivity() {
                     "play" -> playVideo()
                     "scroll" -> web.scrollBy(0, y * 4)
                     "text" -> if (showingHome) search.setText(value) else urlInput.setText(value)
+                    "go" -> browse(if (value.isNotBlank()) value else if (showingHome) search.text.toString() else urlInput.text.toString())
                 }
             } }.also { it.start(5000, false) }
             val link = remote?.address()
@@ -340,7 +341,7 @@ class MainActivity : AppCompatActivity() {
         }
     }
     override fun onDestroy() { remote?.stop(); web.destroy(); super.onDestroy() }
-    inner class CursorOverlay : View(this) {
+    inner class CursorOverlay : View(this@MainActivity) {
         var px = 400f; var py = 250f; var visible = false
         private val paint = Paint(3).apply { color = Color.WHITE; style = Paint.Style.FILL; setShadowLayer(3f, 1f, 1f, Color.BLACK) }
         fun move(dx: Float, dy: Float) {
