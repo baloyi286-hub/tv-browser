@@ -44,7 +44,7 @@ class PhoneRemote(private val onAction: (String, Int, Int, String) -> Unit) : Na
             val x = session.parameters["x"]?.firstOrNull()?.toIntOrNull()?.coerceIn(-200, 200) ?: 0
             val y = session.parameters["y"]?.firstOrNull()?.toIntOrNull()?.coerceIn(-200, 200) ?: 0
             val value = session.parameters["value"]?.firstOrNull().orEmpty().take(2000)
-            if (action in setOf("move", "click", "back", "home", "scroll", "text", "play")) onAction(action, x, y, value)
+            if (action in setOf("move", "click", "back", "home", "scroll", "text", "go", "play")) onAction(action, x, y, value)
             return newFixedLengthResponse("OK")
         }
         val html = """
@@ -52,7 +52,7 @@ class PhoneRemote(private val onAction: (String, Int, Int, String) -> Unit) : Na
           <style>body{background:#101b22;color:white;font-family:sans-serif;margin:20px}button,input{font-size:20px;padding:14px;border-radius:12px;margin:5px}#pad{height:55vh;background:#263c4b;border-radius:20px;touch-action:none;display:grid;place-items:center}</style></head>
           <body><h2>TV Browser Remote</h2><div><button onclick="send('back')">Back</button><button onclick="send('home')">Home</button><button onclick="send('play')">Play video</button></div>
           <div id="pad">Move finger to control TV cursor<br>Tap to click</div>
-          <input id="txt" placeholder="Type on TV"><button onclick="send('text',0,0,document.getElementById('txt').value)">Send text</button>
+          <input id="txt" placeholder="Type on TV"><button onclick="send('go',0,0,document.getElementById('txt').value)">Open URL / Search</button>
           <div><button onclick="send('scroll',0,-100)">Scroll up</button><button onclick="send('scroll',0,100)">Scroll down</button></div>
           <script>
           const token=new URLSearchParams(location.search).get('token');
