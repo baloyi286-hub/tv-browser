@@ -1,22 +1,37 @@
 package za.co.tvbrowser
 
-import android.content.Context
-import android.net.wifi.WifiManager
 import fi.iki.elonen.NanoHTTPD
 import java.net.Inet4Address
 import java.net.NetworkInterface
 
-class PhoneRemote(private val onAction: (String, Int, Int, String) -> Unit) : NanoHTTPD(8765) {
+class PhoneRemote(private val onAction: (String, Int, Int, String) -> Unit) : NanoHTTPD(0) {
+    private fun localIp(): String? {
+        for (name in listOf("wlan0", "eth0")) {
+            val net = NetworkInterface.getByName(name) ?: continue
+            if (!net.isUp) continue
+            val addresses = net.inetAddresses
+            while (addresses.hasMoreElements()) {
+                val ip = addresses.nextElement()
+                if (ip is Inet4Address && ip.isSiteLocalAddress) return ip.hostAddress
+            }
+        }
+        return null
+    }
     val pairingToken = java.util.UUID.randomUUID().toString().replace("-", "")
     fun address(): String? {
+        val port = listeningPort
+        if (port <= 0) return null
+        val preferred = localIp()
+        if (preferred != null) return "http://$preferred:$port/?token=$pairingToken"
         val interfaces = NetworkInterface.getNetworkInterfaces() ?: return null
         while (interfaces.hasMoreElements()) {
             val network = interfaces.nextElement()
-            if (!network.isUp || network.isLoopback) continue
+            if (!network.isUp || network.isLoopback || network.isVirtual) continue
             val ips = network.inetAddresses
             while (ips.hasMoreElements()) {
                 val ip = ips.nextElement()
-                if (ip is Inet4Address && ip.isSiteLocalAddress) return "http://${ip.hostAddress}:8765/?token=$pairingToken"
+                if (ip is Inet4Address && ip.isSiteLocalAddress)
+                    return "http://${ip.hostAddress}:$port/?token=$pairingToken"
             }
         }
         return null
