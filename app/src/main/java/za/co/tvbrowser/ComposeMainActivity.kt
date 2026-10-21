@@ -20,6 +20,14 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.*
 import androidx.compose.foundation.focusable
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.input.pointer.pointerMoveFilter
+import androidx.compose.ui.input.pointer.PointerEventType
+import androidx.compose.ui.input.pointer.onPointerEvent
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import androidx.compose.material.Icon
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.*
@@ -65,7 +73,55 @@ private val white = Color(0xFFF2F9FB)
 
 class ComposeMainActivity : ComponentActivity() {
     private var remote: PhoneRemote? = null
+    private data class BrowserTab(val id: Long, val view: WebView, var url: String = "", var title: String = "New tab", var video: String? = null)
+    private val tabs = mutableStateListOf<BrowserTab>()
+    private var activeTabId by mutableLongStateOf(-1L)
+    private var tabsOpen by mutableStateOf(false)
+    private var historyOpen by mutableStateOf(false)
+    private val history = mutableStateListOf<Pair<String,String>>()
+    private val recentlyClosed = mutableStateListOf<Pair<String,String>>()
     private var web: WebView? = null
+    private fun activeTab() = tabs.firstOrNull { it.id == activeTabId }
+    private fun newTab(url: String? = null) {
+        val tab = BrowserTab(System.nanoTime(), createBrowser())
+        tabs.add(tab)
+        switchTab(tab.id)
+        if (!url.isNullOrBlank()) navigate(url) else home()
+    }
+    private fun switchTab(id: Long) {
+        val tab = tabs.firstOrNull { it.id == id } ?: return
+        edge(0)
+        activeTabId = id
+        web = tab.view
+        address = tab.url
+        currentUrl = tab.url
+        video = tab.video
+        lastPrompt = tab.video.orEmpty()
+        videoPrompt = false
+        page = tab.url.isNotBlank()
+        tabsOpen = false
+        menu = false
+    }
+    private fun closeTab(id: Long) {
+        val tab = tabs.firstOrNull { it.id == id } ?: return
+        if (tab.url.isNotBlank()) {
+            recentlyClosed.removeAll { it.second == tab.url }
+            recentlyClosed.add(0, tab.title to tab.url)
+            while (recentlyClosed.size > 12) recentlyClosed.removeAt(recentlyClosed.lastIndex)
+        }
+        tabs.remove(tab)
+        if (activeTabId == id) {
+            if (tabs.isNotEmpty()) switchTab(tabs.last().id)
+            else newTab()
+        }
+        tab.view.destroy()
+    }
+    private fun recordHistory(url: String, title: String) {
+        if (!url.startsWith("http")) return
+        history.removeAll { it.second == url }
+        history.add(0, title.ifBlank { url } to url)
+        while (history.size > 40) history.removeAt(history.lastIndex)
+    }
     private var video by mutableStateOf<String?>(null)
     private var videoPrompt by mutableStateOf(false)
     private var downloadPrompt by mutableStateOf(false)
@@ -113,6 +169,7 @@ class ComposeMainActivity : ComponentActivity() {
         }
         video = null; lastPrompt = ""; page = true; menu = false
         currentUrl = url; address = url
+        activeTab()?.apply { this.url = url; this.video = null }
         web?.loadUrl(url)
     }
     private fun home() { edge(0); page = false; menu = false }
@@ -144,6 +201,7 @@ class ComposeMainActivity : ComponentActivity() {
         runOnUiThread {
             if (!page || link == video) return@runOnUiThread
             video = link
+            activeTab()?.video = link
             if (lastPrompt != link) { lastPrompt = link; videoPrompt = true }
         }
     }
@@ -169,7 +227,11 @@ class ComposeMainActivity : ComponentActivity() {
                 else null
             }
             override fun onPageFinished(view: WebView?, url: String?) {
-                currentUrl = url.orEmpty(); address = currentUrl
+                val tab = tabs.firstOrNull { it.view === view }
+                val finalUrl = url.orEmpty()
+                tab?.apply { this.url = finalUrl; this.title = view?.title?.takeIf { it.isNotBlank() } ?: finalUrl }
+                recordHistory(finalUrl, tab?.title ?: finalUrl)
+                if (tab?.id == activeTabId) { currentUrl = finalUrl; address = finalUrl }
                 view?.evaluateJavascript("""
                     (function(){
                       if(window.__novaScan)return;window.__novaScan=true;
@@ -204,9 +266,10 @@ class ComposeMainActivity : ComponentActivity() {
         cursorVisible = true
         cursorX = (cursorX + dx).coerceIn(0f, screenWidth)
         cursorY = (cursorY + dy).coerceIn(0f, screenHeight)
-        menu = cursorX < 32f
+        menu = if (menu) cursorX <= withMenuWidth() else cursorX < 36f
         edge(if (!page) 0 else if (cursorY >= screenHeight - 55f) 1 else if (cursorY < 25f) -1 else 0)
     }
+    private fun withMenuWidth() = resources.displayMetrics.density * 230f
     private fun tapCursor() {
         if (!cursorVisible) return
         val t = android.os.SystemClock.uptimeMillis()
@@ -223,7 +286,7 @@ class ComposeMainActivity : ComponentActivity() {
                 KeyEvent.KEYCODE_DPAD_RIGHT -> { move(delta,0f); return true }
                 KeyEvent.KEYCODE_DPAD_UP -> { move(0f,-delta); return true }
                 KeyEvent.KEYCODE_DPAD_DOWN -> { move(0f,delta); return true }
-                KeyEvent.KEYCODE_DPAD_CENTER -> if (cursorVisible && page && !menu) { tapCursor(); return true }
+                KeyEvent.KEYCODE_DPAD_CENTER -> if (cursorVisible && !videoPrompt && !downloadPrompt && !tabsOpen && !historyOpen) { tapCursor(); return true }
             }
         }
         return super.dispatchKeyEvent(event)
@@ -233,7 +296,7 @@ class ComposeMainActivity : ComponentActivity() {
             event.actionMasked in listOf(MotionEvent.ACTION_MOVE, MotionEvent.ACTION_HOVER_MOVE)) {
             cursorVisible = false
             val x = event.x; val y = event.y
-            menu = x < 28f
+            menu = if (menu) x <= withMenuWidth() else x < 36f
             edge(if (!page) 0 else if (y > screenHeight - 55f) 1 else if (y < 25f) -1 else 0)
         }
         return super.dispatchGenericMotionEvent(event)
@@ -241,7 +304,7 @@ class ComposeMainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         window.decorView.systemUiVisibility = 5894
-        web = createBrowser()
+        newTab()
         try {
             remote = PhoneRemote { action, x, y, value -> runOnUiThread {
                 when(action) {
@@ -261,6 +324,8 @@ class ComposeMainActivity : ComponentActivity() {
     }
     private fun back() {
         when {
+            tabsOpen -> tabsOpen = false
+            historyOpen -> historyOpen = false
             videoPrompt -> videoPrompt = false
             downloadPrompt -> downloadPrompt = false
             menu -> menu = false
@@ -273,7 +338,7 @@ class ComposeMainActivity : ComponentActivity() {
     override fun onDestroy() {
         handler.removeCallbacks(scrollTick)
         remote?.stop()
-        web?.destroy()
+        tabs.forEach { it.view.destroy() }
         super.onDestroy()
     }
 
@@ -286,7 +351,7 @@ class ComposeMainActivity : ComponentActivity() {
                 AnimatedVisibility(page) { TopBar() }
                 Box(Modifier.fillMaxSize()) {
                     if (page) {
-                        AndroidView(factory = { web!! }, modifier = Modifier.fillMaxSize())
+                        key(activeTabId) { AndroidView(factory = { web!! }, modifier = Modifier.fillMaxSize()) }
                     } else HomeScreen()
                 }
             }
@@ -302,6 +367,8 @@ class ComposeMainActivity : ComponentActivity() {
                     drawPath(p, white)
                 }
             }
+            if (tabsOpen) TabPicker()
+            if (historyOpen) HistoryPicker()
             if (videoPrompt) DialogPanel("Video detected", "Play this video in the fullscreen TV player?", "Play", { play() }, "Later", { videoPrompt=false })
             if (downloadPrompt) DialogPanel("Save video", "Choose the destination", "TV storage", { saveInternal() }, "USB / Folder", {
                 downloadPrompt=false
@@ -319,6 +386,7 @@ class ComposeMainActivity : ComponentActivity() {
             UrlField(address, { address=it }, { navigate(address) }, Modifier.weight(1f))
             FloatingIcon(Icons.Rounded.PlayArrow,"Play",video!=null) { play() }
             FloatingIcon(Icons.Rounded.FileDownload,"Download") { download() }
+            FloatingIcon(Icons.Rounded.Tab,"Tabs") { tabsOpen = true }
             FloatingIcon(Icons.Rounded.Menu,"Menu") { menu=!menu }
         }
     }
@@ -334,11 +402,19 @@ class ComposeMainActivity : ComponentActivity() {
                 UrlField(homeSearch,{homeSearch=it},{navigate(homeSearch)},Modifier.weight(1f))
                 FloatingIcon(Icons.Rounded.Search,"Search") { navigate(homeSearch) }
             }
-            Text("QUICK ACCESS",fontSize=13.sp,fontWeight=FontWeight.SemiBold,color=mint)
+            Text("RECENTLY OPENED TABS",fontSize=13.sp,fontWeight=FontWeight.SemiBold,color=mint)
             LazyRow(horizontalArrangement=Arrangement.spacedBy(15.dp)) {
-                items(listOf("Google" to "https://google.com","YouTube" to "https://youtube.com","Twitch" to "https://twitch.tv","Facebook" to "https://facebook.com")) { (name,url) ->
-                    FloatingTile(name) { navigate(url) }
+                items(tabs.filter { it.url.isNotBlank() }.reversed(), key={it.id}) { tab ->
+                    FloatingTile(tab.title.take(24)) { switchTab(tab.id) }
                 }
+                items(recentlyClosed.take(6)) { (title,url) ->
+                    FloatingTile(title.take(24)) { newTab(url) }
+                }
+            }
+            Row(horizontalArrangement=Arrangement.spacedBy(12.dp)) {
+                FloatingIcon(Icons.Rounded.Add,"New tab") { newTab() }
+                FloatingIcon(Icons.Rounded.Tab,"All tabs") { tabsOpen = true }
+                FloatingIcon(Icons.Rounded.History,"History") { historyOpen = true }
             }
             pairingLink?.let { link ->
                 Row(verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(24.dp)) {
@@ -389,14 +465,19 @@ class ComposeMainActivity : ComponentActivity() {
             Text("NOVA",fontSize=24.sp,fontWeight=FontWeight.Bold,color=mint,modifier=Modifier.padding(12.dp))
             listOf(
                 Triple(Icons.Rounded.Home,"Home",{home()}),
-                Triple(Icons.Rounded.ArrowBack,"Back",{back()}),
+                Triple(Icons.Rounded.History,"History",{menu=false;historyOpen=true}),
                 Triple(Icons.Rounded.BookmarkAdd,"Bookmark",{getSharedPreferences("browser",MODE_PRIVATE).edit().putString("bookmark",currentUrl).apply();toast("Saved")}),
                 Triple(Icons.Rounded.Bookmarks,"Saved",{getSharedPreferences("browser",MODE_PRIVATE).getString("bookmark",null)?.let { navigate(it) }; Unit}),
                 Triple(Icons.Rounded.PlayArrow,"Play video",{play()}),
                 Triple(Icons.Rounded.FileDownload,"Download",{download()}),
                 Triple(Icons.Rounded.Close,"Close",{menu=false})
             ).forEach { (icon,label,action) ->
-                Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp)).clickable(onClick=action)
+                var hovered by remember { mutableStateOf(false) }
+                Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp))
+                    .background(if (hovered) Color(0xFF356F67) else Color.Transparent)
+                    .onPointerEvent(PointerEventType.Enter) { hovered = true }
+                    .onPointerEvent(PointerEventType.Exit) { hovered = false }
+                    .clickable(onClick=action)
                     .padding(13.dp),verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(14.dp)) {
                     Icon(icon,contentDescription=null,tint=mint,modifier=Modifier.size(22.dp))
                     Text(label,fontSize=16.sp,color=white)
@@ -404,16 +485,65 @@ class ComposeMainActivity : ComponentActivity() {
             }
         }
     }
+    @Composable private fun TabPicker() {
+        Dialog(onDismissRequest={tabsOpen=false},properties=DialogProperties(usePlatformDefaultWidth=false)) {
+            Column(Modifier.width(650.dp).clip(RoundedCornerShape(28.dp)).background(Color(0xFF1A3042)).padding(26.dp),
+                verticalArrangement=Arrangement.spacedBy(12.dp)) {
+                Text("OPEN TABS",fontSize=24.sp,fontWeight=FontWeight.Bold,color=mint)
+                Row(horizontalArrangement=Arrangement.spacedBy(12.dp)) {
+                    FloatingIcon(Icons.Rounded.Add,"New tab") { newTab() }
+                    FloatingIcon(Icons.Rounded.Close,"Close") { tabsOpen=false }
+                }
+                androidx.compose.foundation.lazy.LazyColumn(Modifier.heightIn(max=400.dp),verticalArrangement=Arrangement.spacedBy(8.dp)) {
+                    items(tabs.toList(),key={it.id}) { tab ->
+                        Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(12.dp)) {
+                            Box(Modifier.weight(1f)) { FloatingTile(tab.title.take(30)) { switchTab(tab.id) } }
+                            FloatingIcon(Icons.Rounded.Close,"Close tab") { closeTab(tab.id) }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    @Composable private fun HistoryPicker() {
+        Dialog(onDismissRequest={historyOpen=false},properties=DialogProperties(usePlatformDefaultWidth=false)) {
+            Column(Modifier.width(680.dp).clip(RoundedCornerShape(28.dp)).background(Color(0xFF1A3042)).padding(26.dp),
+                verticalArrangement=Arrangement.spacedBy(12.dp)) {
+                Text("BROWSING HISTORY",fontSize=24.sp,fontWeight=FontWeight.Bold,color=mint)
+                FloatingIcon(Icons.Rounded.Close,"Close") { historyOpen=false }
+                androidx.compose.foundation.lazy.LazyColumn(Modifier.heightIn(max=420.dp),verticalArrangement=Arrangement.spacedBy(10.dp)) {
+                    items(history.toList()) { (title,url) ->
+                        FloatingTile(title.take(28)) { historyOpen=false;navigate(url) }
+                    }
+                }
+            }
+        }
+    }
     @Composable private fun DialogPanel(title:String,description:String,primary:String,onPrimary:()->Unit,secondary:String,onSecondary:()->Unit) {
-        Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha=.65f)),contentAlignment=Alignment.Center) {
-            Column(Modifier.width(430.dp).clip(RoundedCornerShape(30.dp)).background(Color(0xFF1A3042)).padding(30.dp),verticalArrangement=Arrangement.spacedBy(20.dp)) {
+        Dialog(onDismissRequest={videoPrompt=false;downloadPrompt=false},properties=DialogProperties(usePlatformDefaultWidth=false)) {
+            Column(Modifier.width(480.dp).clip(RoundedCornerShape(30.dp)).background(Color(0xFF1A3042)).padding(30.dp),
+                verticalArrangement=Arrangement.spacedBy(20.dp)) {
                 Text(title,fontSize=26.sp,fontWeight=FontWeight.Bold,color=white)
                 Text(description,fontSize=17.sp,color=white.copy(alpha=.8f))
                 Row(horizontalArrangement=Arrangement.spacedBy(12.dp)) {
-                    FloatingTile(primary,onPrimary)
-                    FloatingTile(secondary,onSecondary)
+                    DialogChoice(primary,true,onPrimary)
+                    DialogChoice(secondary,false,onSecondary)
                 }
             }
+        }
+    }
+    @Composable private fun DialogChoice(label:String,initial:Boolean,onClick:()->Unit) {
+        val requester=remember { FocusRequester() }
+        var focused by remember { mutableStateOf(false) }
+        LaunchedEffect(Unit) { if(initial) requester.requestFocus() }
+        Box(Modifier.width(185.dp).height(70.dp).focusRequester(requester)
+            .clip(RoundedCornerShape(22.dp))
+            .background(if(focused)Color(0xFF397E6E) else slate)
+            .onPointerEvent(PointerEventType.Enter) { focused=true }
+            .onPointerEvent(PointerEventType.Exit) { focused=false }
+            .onFocusChanged { focused=it.isFocused }
+            .clickable(onClick=onClick).focusable(),contentAlignment=Alignment.Center) {
+            Text(label,fontSize=18.sp,fontWeight=FontWeight.SemiBold,color=white)
         }
     }
 }
