@@ -186,8 +186,8 @@ class ComposeMainActivity : ComponentActivity() {
         val link = video ?: return
         try {
             val request = DownloadManager.Request(Uri.parse(link))
-                .setTitle("NOVA video").setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
-                .setDestinationInExternalFilesDir(this, Environment.DIRECTORY_MOVIES, "nova-${System.currentTimeMillis()}.mp4")
+                .setTitle("Khensoz video").setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
+                .setDestinationInExternalFilesDir(this, Environment.DIRECTORY_MOVIES, "khensoz-${System.currentTimeMillis()}.mp4")
             (getSystemService(DOWNLOAD_SERVICE) as DownloadManager).enqueue(request)
             toast("Download started")
         } catch (e: Exception) { toast("Download failed: ${e.message}") }
@@ -215,7 +215,7 @@ class ComposeMainActivity : ComponentActivity() {
         isFocusableInTouchMode = true
         addJavascriptInterface(object {
             @JavascriptInterface fun found(link: String) { detect(link) }
-        }, "NOVA")
+        }, "Khensoz")
         webViewClient = object : WebViewClient() {
             override fun shouldInterceptRequest(view: WebView?, request: WebResourceRequest?): WebResourceResponse? {
                 val url = request?.url?.toString() ?: return null
@@ -234,10 +234,10 @@ class ComposeMainActivity : ComponentActivity() {
                 if (tab?.id == activeTabId) { currentUrl = finalUrl; address = finalUrl }
                 view?.evaluateJavascript("""
                     (function(){
-                      if(window.__novaScan)return;window.__novaScan=true;
+                      if(window.__khensozScan)return;window.__khensozScan=true;
                       const scan=()=>document.querySelectorAll('video,video source').forEach(v=>{
                         const src=v.currentSrc||v.src||v.getAttribute('src');
-                        if(src&&/^https?:/.test(src))NOVA.found(src);
+                        if(src&&/^https?:/.test(src))Khensoz.found(src);
                       });
                       new MutationObserver(scan).observe(document.documentElement,{childList:true,subtree:true,attributes:true,attributeFilter:['src']});
                       scan();
@@ -373,7 +373,7 @@ class ComposeMainActivity : ComponentActivity() {
             if (downloadPrompt) DialogPanel("Save video", "Choose the destination", "TV storage", { saveInternal() }, "USB / Folder", {
                 downloadPrompt=false
                 pendingDownload=video
-                saveToUsb.launch("nova-${System.currentTimeMillis()}.mp4")
+                saveToUsb.launch("khensoz-${System.currentTimeMillis()}.mp4")
             })
         }
     }
@@ -394,7 +394,7 @@ class ComposeMainActivity : ComponentActivity() {
         val background = Brush.linearGradient(listOf(Color(0xFF0B1D30),Color(0xFF1A3A45),Color(0xFF10192B)))
         Column(Modifier.fillMaxSize().background(background).padding(start=105.dp,top=35.dp,end=44.dp,bottom=20.dp), verticalArrangement=Arrangement.spacedBy(20.dp)) {
             Row(verticalAlignment=Alignment.CenterVertically, horizontalArrangement=Arrangement.spacedBy(15.dp)) {
-                Text("NOVA",fontSize=40.sp,fontWeight=FontWeight.Bold,color=mint)
+                Text("Khensoz",fontSize=40.sp,fontWeight=FontWeight.Bold,color=mint)
                 Text("BROWSER",fontSize=19.sp,color=white.copy(alpha=.7f))
             }
             Text("Your web. Your screen.",fontSize=25.sp,fontWeight=FontWeight.Medium,color=white)
@@ -462,7 +462,7 @@ class ComposeMainActivity : ComponentActivity() {
         Column(Modifier.width(210.dp).clip(RoundedCornerShape(topEnd=30.dp,bottomEnd=30.dp))
             .background(Brush.verticalGradient(listOf(Color(0xFF28465A),Color(0xFF14283B))))
             .padding(12.dp),verticalArrangement=Arrangement.spacedBy(11.dp)) {
-            Text("NOVA",fontSize=24.sp,fontWeight=FontWeight.Bold,color=mint,modifier=Modifier.padding(12.dp))
+            Text("Khensoz",fontSize=24.sp,fontWeight=FontWeight.Bold,color=mint,modifier=Modifier.padding(12.dp))
             listOf(
                 Triple(Icons.Rounded.Home,"Home",{home()}),
                 Triple(Icons.Rounded.History,"History",{menu=false;historyOpen=true}),
