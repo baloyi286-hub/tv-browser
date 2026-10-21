@@ -40,6 +40,25 @@ class MainActivity : AppCompatActivity() {
     private var remote: PhoneRemote? = null
     private var pendingDownload: String? = null
     private var showingHome = true
+    private var edgeScrollActive = false
+    private val edgeHandler = android.os.Handler(android.os.Looper.getMainLooper())
+    private var edgeDirection = 0
+    private val edgeScroller = object : Runnable {
+        override fun run() {
+            if (edgeDirection == 0 || showingHome || fullscreen != null || !::web.isInitialized) return
+            web.scrollBy(0, edgeDirection * (web.height / 12).coerceAtLeast(24))
+            edgeHandler.postDelayed(this, 70)
+        }
+    }
+    private fun updateEdgeScroll(y: Float, active: Boolean) {
+        val height = frame.height.toFloat()
+        val direction = if (!active || showingHome || fullscreen != null || height <= 0) 0
+            else if (y >= height - 65f) 1 else if (y <= 24f) -1 else 0
+        if (direction == edgeDirection) return
+        edgeDirection = direction
+        edgeHandler.removeCallbacks(edgeScroller)
+        if (direction != 0) edgeHandler.post(edgeScroller)
+    }
     private val blocked = setOf("doubleclick.net", "googlesyndication.com", "googleadservices.com", "adnxs.com", "taboola.com", "outbrain.com", "popads.net")
     private val pickFile = registerForActivityResult(ActivityResultContracts.CreateDocument("video/*")) { uri ->
         val link = pendingDownload
@@ -56,35 +75,38 @@ class MainActivity : AppCompatActivity() {
     }
     private fun toast(message: String) = Toast.makeText(this, message, Toast.LENGTH_SHORT).show()
     private val accent = Color.rgb(118, 232, 179)
-    private fun panel(color: Int, radius: Float = 22f, outline: Int = Color.rgb(66, 89, 108)) =
+    private fun panel(color: Int, radius: Float = 22f, outline: Int = Color.TRANSPARENT) =
         GradientDrawable().apply {
             shape = GradientDrawable.RECTANGLE
             setColor(color); cornerRadius = radius
-            setStroke(2, outline)
+            if (outline != Color.TRANSPARENT) setStroke(2, outline)
         }
     private fun action(label: String, block: () -> Unit) = Button(this).apply {
-        text = label; isAllCaps = false
-        setTextColor(Color.WHITE); textSize = 15f; typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
-        background = panel(Color.rgb(37, 53, 72), 20f)
-        elevation = 5f
-        setPadding(12, 4, 12, 4)
+        text = label
+        isAllCaps = false
+        setTextColor(Color.rgb(236, 245, 248))
+        textSize = 16f
+        typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
+        background = panel(Color.rgb(35, 52, 67), 46f)
+        elevation = 10f
+        stateListAnimator = null
+        setPadding(14, 5, 14, 5)
         setOnFocusChangeListener { _, focused ->
-            background = panel(if (focused) Color.rgb(42, 103, 94) else Color.rgb(37, 53, 72), 20f,
-                if (focused) accent else Color.rgb(66, 89, 108))
-            scaleX = if (focused) 1.05f else 1f
-            scaleY = if (focused) 1.05f else 1f
+            animate().scaleX(if (focused) 1.09f else 1f)
+                .scaleY(if (focused) 1.09f else 1f)
+                .translationZ(if (focused) 12f else 0f).setDuration(150).start()
+            background = panel(if (focused) Color.rgb(53, 116, 105) else Color.rgb(35, 52, 67), 46f)
         }
         setOnClickListener { block() }
     }
     private fun styleInput(input: EditText) {
-        input.background = panel(Color.rgb(32, 49, 67), 30f)
+        input.background = panel(Color.rgb(32, 49, 67), 46f)
         input.setPadding(24, 10, 18, 10)
         input.setSelectAllOnFocus(true)
         input.imeOptions = android.view.inputmethod.EditorInfo.IME_ACTION_GO
         input.isFocusableInTouchMode = true
         input.setOnFocusChangeListener { _, focused ->
-            input.background = panel(Color.rgb(32, 49, 67), 30f,
-                if (focused) accent else Color.rgb(66, 89, 108))
+            input.background = panel(if (focused) Color.rgb(42, 65, 80) else Color.rgb(32, 49, 67), 46f)
             if (focused) input.post {
                 (getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager)
                     .showSoftInput(input, InputMethodManager.SHOW_IMPLICIT)
@@ -99,12 +121,14 @@ class MainActivity : AppCompatActivity() {
             query.contains(".") && !query.contains(" ") -> "https://$query"
             else -> "https://www.google.com/search?q=${Uri.encode(query)}"
         }
+        updateEdgeScroll(0f, false)
         detectedVideo = null; lastPrompted = ""; videoButton.isEnabled = false
         showingHome = false; home.visibility = View.GONE; web.visibility = View.VISIBLE
         toolbar.visibility = View.VISIBLE; drawer.visibility = View.GONE
         web.loadUrl(target)
     }
     private fun showHome() {
+        updateEdgeScroll(0f, false)
         showingHome = true; home.visibility = View.VISIBLE; web.visibility = View.GONE
         toolbar.visibility = View.GONE; drawer.visibility = View.GONE
     }
@@ -160,7 +184,7 @@ class MainActivity : AppCompatActivity() {
         window.decorView.systemUiVisibility = View.SYSTEM_UI_FLAG_FULLSCREEN or View.SYSTEM_UI_FLAG_HIDE_NAVIGATION or View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
         frame = FrameLayout(this).apply { setBackgroundColor(Color.rgb(16, 23, 34)) }
         val browserColumn = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        toolbar = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; setPadding(8, 6, 8, 6); setBackgroundColor(Color.rgb(19, 30, 45)); gravity = Gravity.CENTER_VERTICAL }
+        toolbar = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; setPadding(10, 8, 10, 8); setBackgroundColor(Color.rgb(16, 27, 41)); gravity = Gravity.CENTER_VERTICAL }
         toolbar.addView(action("⌂") { showHome() })
         toolbar.addView(action("←") { if (web.canGoBack()) web.goBack() })
         toolbar.addView(action("→") { if (web.canGoForward()) web.goForward() })
@@ -223,10 +247,7 @@ class MainActivity : AppCompatActivity() {
                 }
                 override fun onHideCustomView() { closeFullscreen() }
             }
-            setOnTouchListener { _, event ->
-                if (event.action == MotionEvent.ACTION_MOVE && event.x < 28) drawer.visibility = View.VISIBLE
-                false
-            }
+
         }
         browserColumn.addView(web, LinearLayout.LayoutParams(-1, 0, 1f))
         frame.addView(browserColumn, FrameLayout.LayoutParams(-1, -1))
@@ -241,7 +262,7 @@ class MainActivity : AppCompatActivity() {
             typeface = Typeface.create("sans-serif-light", Typeface.BOLD)
             setTextColor(accent); setPadding(0, 5, 0, 18)
         })
-        val shortcuts = LinearLayout(this).apply { gravity = Gravity.CENTER_VERTICAL }
+        val shortcuts = LinearLayout(this).apply { gravity = Gravity.CENTER_VERTICAL; setPadding(0, 10, 0, 10) }
         for ((name, link) in listOf("Google" to "https://google.com", "YouTube" to "https://youtube.com", "Twitch" to "https://twitch.tv", "Facebook" to "https://facebook.com")) {
             shortcuts.addView(action(name) { browse(link) }, LinearLayout.LayoutParams(0, 76, 1f).apply { setMargins(0, 0, 12, 0) })
         }
@@ -279,8 +300,11 @@ class MainActivity : AppCompatActivity() {
         } catch (e: Exception) { toast("Phone remote unavailable: ${e.message}") }
         frame.addView(home, FrameLayout.LayoutParams(-1, -1))
         drawer = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL; background = panel(Color.rgb(21, 39, 55), 25f)
-            setPadding(8, 25, 8, 10)
+            orientation = LinearLayout.VERTICAL
+            background = GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM,
+                intArrayOf(Color.rgb(28, 47, 62), Color.rgb(16, 29, 44))).apply { cornerRadius = 34f }
+            elevation = 18f
+            setPadding(12, 25, 12, 10)
         }
         for ((name, callback) in listOf<Pair<String, () -> Unit>>(
             "⌂ Home" to { showHome() }, "← Back" to { if (web.canGoBack()) web.goBack() },
@@ -288,7 +312,7 @@ class MainActivity : AppCompatActivity() {
             "★ Open saved" to { getSharedPreferences("browser", MODE_PRIVATE).getString("bookmark", null)?.let { browse(it) } },
             "▶ Video" to { playVideo() }, "↓ Download" to { download() },
             "⚙ Hide menu" to { drawer.visibility = View.GONE }
-        )) drawer.addView(action(name, callback), LinearLayout.LayoutParams(-1, 65).apply { bottomMargin = 9 })
+        )) drawer.addView(action(name, callback), LinearLayout.LayoutParams(-1, 58).apply { bottomMargin = 12 })
         frame.addView(drawer, FrameLayout.LayoutParams(210, -1, Gravity.START))
         cursor = CursorOverlay()
         frame.addView(cursor, FrameLayout.LayoutParams(-1, -1))
@@ -311,8 +335,10 @@ class MainActivity : AppCompatActivity() {
             if (fullscreen == null) {
                 if (event.x < 28) drawer.visibility = View.VISIBLE
                 else if (event.x > 220) drawer.visibility = View.GONE
+                updateEdgeScroll(event.y, true)
             }
         }
+        if (event.actionMasked == MotionEvent.ACTION_HOVER_EXIT) updateEdgeScroll(0f, false)
         return super.dispatchGenericMotionEvent(event)
     }
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
@@ -339,7 +365,7 @@ class MainActivity : AppCompatActivity() {
             else -> super.onBackPressed()
         }
     }
-    override fun onDestroy() { remote?.stop(); web.destroy(); super.onDestroy() }
+    override fun onDestroy() { edgeHandler.removeCallbacks(edgeScroller); remote?.stop(); web.destroy(); super.onDestroy() }
     inner class CursorOverlay : View(this@MainActivity) {
         var px = 400f; var py = 250f; var visible = false
         private val paint = Paint(3).apply { color = Color.WHITE; style = Paint.Style.FILL; setShadowLayer(3f, 1f, 1f, Color.BLACK) }
@@ -348,6 +374,7 @@ class MainActivity : AppCompatActivity() {
             py = (py + dy).coerceIn(0f, height.toFloat().coerceAtLeast(1f))
             visible = true
             drawer.visibility = if (px < 35) View.VISIBLE else View.GONE
+            updateEdgeScroll(py, true)
             invalidate()
         }
         fun click(target: WebView) {
