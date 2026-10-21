@@ -49,7 +49,7 @@ class PhoneRemote(private val onAction: (String, Int, Int, String) -> Unit) : Na
         }
         val html = """
           <!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1,viewport-fit=cover">
-          <title>NOVA Remote</title>
+          <title>Khensoz Remote</title>
           <style>
           :root{color-scheme:dark;--mint:#76e8b3;--muted:#a5b8c5}
           *{box-sizing:border-box}body{margin:0;min-height:100dvh;background:radial-gradient(ellipse at 75% 0%,#234c50 0%,#132a3a 40%,#0b1524 100%);color:#f2fafc;font-family:system-ui,-apple-system,sans-serif;padding:calc(env(safe-area-inset-top) + 22px) 18px 24px}
@@ -64,7 +64,7 @@ class PhoneRemote(private val onAction: (String, Int, Int, String) -> Unit) : Na
           .search button{background:var(--mint);color:#0d2527;padding:14px 18px}
           .scroll{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px}
           </style></head>
-          <body><header><b>NOVA</b><span>● TV CONNECTED</span></header>
+          <body><header><b>Khensoz</b><span>● TV CONNECTED</span></header>
           <div class="controls"><button onclick="send('back')">← Back</button><button onclick="send('home')">⌂ Home</button><button onclick="send('play')">▶ Play</button></div>
           <div id="pad"><div class="cursor">⌁</div><strong>Touchpad</strong><small>Move to navigate · Tap to select</small></div>
           <div class="search"><input id="txt" placeholder="Search or enter URL" enterkeyhint="go"><button onclick="navigate()">Open →</button></div>
