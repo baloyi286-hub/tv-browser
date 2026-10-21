@@ -474,8 +474,7 @@ class ComposeMainActivity : ComponentActivity() {
                 var hovered by remember { mutableStateOf(false) }
                 Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp))
                     .background(if (hovered) Color(0xFF356F67) else Color.Transparent)
-                    .onPointerEvent(PointerEventType.Enter) { hovered = true }
-                    .onPointerEvent(PointerEventType.Exit) { hovered = false }
+                    .pointerInput(Unit) { awaitPointerEventScope { while (true) { val event = awaitPointerEvent(); if (event.type == PointerEventType.Enter) hovered = true else if (event.type == PointerEventType.Exit) hovered = false } } }
                     .clickable(onClick=action)
                     .padding(13.dp),verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(14.dp)) {
                     Icon(icon,contentDescription=null,tint=mint,modifier=Modifier.size(22.dp))
@@ -538,8 +537,7 @@ class ComposeMainActivity : ComponentActivity() {
         Box(Modifier.width(185.dp).height(70.dp).focusRequester(requester)
             .clip(RoundedCornerShape(22.dp))
             .background(if(focused)Color(0xFF397E6E) else slate)
-            .onPointerEvent(PointerEventType.Enter) { focused=true }
-            .onPointerEvent(PointerEventType.Exit) { focused=false }
+            .pointerInput(Unit) { awaitPointerEventScope { while (true) { val event = awaitPointerEvent(); if (event.type == PointerEventType.Enter) focused = true else if (event.type == PointerEventType.Exit) focused = false } } }
             .onFocusChanged { focused=it.isFocused }
             .clickable(onClick=onClick).focusable(),contentAlignment=Alignment.Center) {
             Text(label,fontSize=18.sp,fontWeight=FontWeight.SemiBold,color=white)
