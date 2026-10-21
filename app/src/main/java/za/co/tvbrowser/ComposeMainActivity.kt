@@ -18,6 +18,10 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.*
+import androidx.compose.foundation.focusable
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.material.Icon
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
@@ -204,16 +208,11 @@ class ComposeMainActivity : ComponentActivity() {
         edge(if (!page) 0 else if (cursorY >= screenHeight - 55f) 1 else if (cursorY < 25f) -1 else 0)
     }
     private fun tapCursor() {
-        val target = if (page) web else null
-        if (target != null && !menu) {
-            val loc = IntArray(2); target.getLocationOnScreen(loc)
-            val x = cursorX - loc[0]; val y = cursorY - loc[1]
-            if (x >= 0 && y >= 0 && x < target.width && y < target.height) {
-                val t = android.os.SystemClock.uptimeMillis()
-                target.dispatchTouchEvent(MotionEvent.obtain(t,t,MotionEvent.ACTION_DOWN,x,y,0))
-                target.dispatchTouchEvent(MotionEvent.obtain(t,t+80,MotionEvent.ACTION_UP,x,y,0))
-            }
-        }
+        if (!cursorVisible) return
+        val t = android.os.SystemClock.uptimeMillis()
+        val root = window.decorView
+        root.dispatchTouchEvent(MotionEvent.obtain(t,t,MotionEvent.ACTION_DOWN,cursorX,cursorY,0))
+        root.dispatchTouchEvent(MotionEvent.obtain(t,t+80,MotionEvent.ACTION_UP,cursorX,cursorY,0))
     }
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
         if (currentFocus is android.widget.EditText || event.keyCode == KeyEvent.KEYCODE_BACK) return super.dispatchKeyEvent(event)
