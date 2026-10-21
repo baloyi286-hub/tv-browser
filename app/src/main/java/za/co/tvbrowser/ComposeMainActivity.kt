@@ -391,7 +391,7 @@ class ComposeMainActivity : ComponentActivity() {
                 Triple(Icons.Rounded.Home,"Home",{home()}),
                 Triple(Icons.Rounded.ArrowBack,"Back",{back()}),
                 Triple(Icons.Rounded.BookmarkAdd,"Bookmark",{getSharedPreferences("browser",MODE_PRIVATE).edit().putString("bookmark",currentUrl).apply();toast("Saved")}),
-                Triple(Icons.Rounded.Bookmarks,"Saved",{getSharedPreferences("browser",MODE_PRIVATE).getString("bookmark",null)?.let { navigate(it) }}),
+                Triple(Icons.Rounded.Bookmarks,"Saved",{getSharedPreferences("browser",MODE_PRIVATE).getString("bookmark",null)?.let { navigate(it) }; Unit}),
                 Triple(Icons.Rounded.PlayArrow,"Play video",{play()}),
                 Triple(Icons.Rounded.FileDownload,"Download",{download()}),
                 Triple(Icons.Rounded.Close,"Close",{menu=false})
