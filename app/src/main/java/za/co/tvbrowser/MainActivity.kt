@@ -172,7 +172,6 @@ class MainActivity : AppCompatActivity() {
         }
         styleInput(urlInput)
         toolbar.addView(urlInput, LinearLayout.LayoutParams(0, -2, 1f))
-        toolbar.addView(action("Go") { browse(urlInput.text.toString()) })
         videoButton = action("▶") { playVideo() }.apply { isEnabled = false }
         toolbar.addView(videoButton)
         toolbar.addView(action("↓") { download() })
