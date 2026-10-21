@@ -7,6 +7,10 @@ import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
+import android.graphics.Typeface
+import android.graphics.drawable.GradientDrawable
+import android.view.inputmethod.InputMethodManager
+import android.content.Context
 import android.net.Uri
 import android.os.Bundle
 import android.os.Environment
@@ -51,8 +55,41 @@ class MainActivity : AppCompatActivity() {
         pendingDownload = null
     }
     private fun toast(message: String) = Toast.makeText(this, message, Toast.LENGTH_SHORT).show()
+    private val accent = Color.rgb(118, 232, 179)
+    private fun panel(color: Int, radius: Float = 22f, outline: Int = Color.rgb(66, 89, 108)) =
+        GradientDrawable().apply {
+            shape = GradientDrawable.RECTANGLE
+            setColor(color); cornerRadius = radius
+            setStroke(2, outline)
+        }
     private fun action(label: String, block: () -> Unit) = Button(this).apply {
-        text = label; isAllCaps = false; setOnClickListener { block() }
+        text = label; isAllCaps = false
+        setTextColor(Color.WHITE); textSize = 15f; typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
+        background = panel(Color.rgb(37, 53, 72), 20f)
+        elevation = 5f
+        setPadding(12, 4, 12, 4)
+        setOnFocusChangeListener { _, focused ->
+            background = panel(if (focused) Color.rgb(42, 103, 94) else Color.rgb(37, 53, 72), 20f,
+                if (focused) accent else Color.rgb(66, 89, 108))
+            scaleX = if (focused) 1.05f else 1f
+            scaleY = if (focused) 1.05f else 1f
+        }
+        setOnClickListener { block() }
+    }
+    private fun styleInput(input: EditText) {
+        input.background = panel(Color.rgb(32, 49, 67), 30f)
+        input.setPadding(24, 10, 18, 10)
+        input.setSelectAllOnFocus(true)
+        input.imeOptions = android.view.inputmethod.EditorInfo.IME_ACTION_GO
+        input.isFocusableInTouchMode = true
+        input.setOnFocusChangeListener { _, focused ->
+            input.background = panel(Color.rgb(32, 49, 67), 30f,
+                if (focused) accent else Color.rgb(66, 89, 108))
+            if (focused) input.post {
+                (getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager)
+                    .showSoftInput(input, InputMethodManager.SHOW_IMPLICIT)
+            }
+        }
     }
     private fun browse(value: String) {
         val query = value.trim()
@@ -123,7 +160,7 @@ class MainActivity : AppCompatActivity() {
         window.decorView.systemUiVisibility = View.SYSTEM_UI_FLAG_FULLSCREEN or View.SYSTEM_UI_FLAG_HIDE_NAVIGATION or View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
         frame = FrameLayout(this).apply { setBackgroundColor(Color.rgb(16, 23, 34)) }
         val browserColumn = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        toolbar = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; setBackgroundColor(Color.rgb(32, 39, 54)) }
+        toolbar = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; setPadding(8, 6, 8, 6); setBackgroundColor(Color.rgb(19, 30, 45)); gravity = Gravity.CENTER_VERTICAL }
         toolbar.addView(action("⌂") { showHome() })
         toolbar.addView(action("←") { if (web.canGoBack()) web.goBack() })
         toolbar.addView(action("→") { if (web.canGoForward()) web.goForward() })
@@ -133,7 +170,9 @@ class MainActivity : AppCompatActivity() {
             setHintTextColor(Color.LTGRAY)
             setOnEditorActionListener { _, _, _ -> browse(text.toString()); true }
         }
+        styleInput(urlInput)
         toolbar.addView(urlInput, LinearLayout.LayoutParams(0, -2, 1f))
+        toolbar.addView(action("Go") { browse(urlInput.text.toString()) })
         videoButton = action("▶") { playVideo() }.apply { isEnabled = false }
         toolbar.addView(videoButton)
         toolbar.addView(action("↓") { download() })
@@ -194,22 +233,32 @@ class MainActivity : AppCompatActivity() {
         frame.addView(browserColumn, FrameLayout.LayoutParams(-1, -1))
         home = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(95, 35, 35, 20)
-            setBackgroundColor(Color.rgb(18, 29, 43))
+            setPadding(105, 28, 36, 22)
+            background = GradientDrawable(GradientDrawable.Orientation.TL_BR,
+                intArrayOf(Color.rgb(12, 28, 43), Color.rgb(23, 45, 58), Color.rgb(12, 22, 37))).apply { cornerRadius = 0f }
         }
-        home.addView(TextView(this).apply { text = "TV BROWSER"; textSize = 29f; setTextColor(Color.WHITE) })
-        val shortcuts = LinearLayout(this)
+        home.addView(TextView(this).apply {
+            text = "NOVA  /  TV BROWSER"; textSize = 30f; letterSpacing = 0.10f
+            typeface = Typeface.create("sans-serif-light", Typeface.BOLD)
+            setTextColor(accent); setPadding(0, 5, 0, 18)
+        })
+        val shortcuts = LinearLayout(this).apply { gravity = Gravity.CENTER_VERTICAL }
         for ((name, link) in listOf("Google" to "https://google.com", "YouTube" to "https://youtube.com", "Twitch" to "https://twitch.tv", "Facebook" to "https://facebook.com")) {
-            shortcuts.addView(action(name) { browse(link) }, LinearLayout.LayoutParams(0, 85, 1f))
+            shortcuts.addView(action(name) { browse(link) }, LinearLayout.LayoutParams(0, 76, 1f).apply { setMargins(0, 0, 12, 0) })
         }
         home.addView(shortcuts)
+        home.addView(TextView(this).apply { text = "Discover more on the big screen"; textSize = 19f; setTextColor(Color.rgb(183, 205, 217)); setPadding(0, 16, 0, 12) })
         val search = EditText(this).apply {
             hint = "Search or enter URL"; setTextColor(Color.WHITE); setHintTextColor(Color.LTGRAY)
             setSingleLine(true); textSize = 23f
             setOnEditorActionListener { _, _, _ -> browse(text.toString()); true }
         }
-        home.addView(search)
-        home.addView(TextView(this).apply { text = "Phone remote — scan QR on the same Wi-Fi"; textSize = 20f; setTextColor(Color.WHITE) })
+        styleInput(search)
+        val searchRow = LinearLayout(this).apply { gravity = Gravity.CENTER_VERTICAL }
+        searchRow.addView(search, LinearLayout.LayoutParams(0, 68, 1f))
+        searchRow.addView(action("Search  →") { browse(search.text.toString()) }, LinearLayout.LayoutParams(160, 68).apply { leftMargin = 12 })
+        home.addView(searchRow)
+        home.addView(TextView(this).apply { text = "PHONE TOUCHPAD   •   SCAN TO PAIR"; textSize = 17f; letterSpacing = 0.08f; setTextColor(accent); setPadding(0, 24, 0, 10) })
         try {
             remote = PhoneRemote { act, x, y, value -> runOnUiThread {
                 when (act) {
@@ -230,7 +279,7 @@ class MainActivity : AppCompatActivity() {
         } catch (e: Exception) { toast("Phone remote unavailable: ${e.message}") }
         frame.addView(home, FrameLayout.LayoutParams(-1, -1))
         drawer = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL; setBackgroundColor(Color.rgb(29, 43, 60))
+            orientation = LinearLayout.VERTICAL; background = panel(Color.rgb(21, 39, 55), 25f)
             setPadding(8, 25, 8, 10)
         }
         for ((name, callback) in listOf<Pair<String, () -> Unit>>(
@@ -239,17 +288,13 @@ class MainActivity : AppCompatActivity() {
             "★ Open saved" to { getSharedPreferences("browser", MODE_PRIVATE).getString("bookmark", null)?.let { browse(it) } },
             "▶ Video" to { playVideo() }, "↓ Download" to { download() },
             "⚙ Hide menu" to { drawer.visibility = View.GONE }
-        )) drawer.addView(action(name, callback))
+        )) drawer.addView(action(name, callback), LinearLayout.LayoutParams(-1, 65).apply { bottomMargin = 9 })
         frame.addView(drawer, FrameLayout.LayoutParams(210, -1, Gravity.START))
         cursor = CursorOverlay()
         frame.addView(cursor, FrameLayout.LayoutParams(-1, -1))
-        cursor.setOnTouchListener { _, event ->
-            if (event.action == MotionEvent.ACTION_HOVER_MOVE || event.action == MotionEvent.ACTION_MOVE) {
-                if (event.x < 30) drawer.visibility = View.VISIBLE
-                else if (event.x > 220) drawer.visibility = View.GONE
-            }
-            false
-        }
+        // Decorative overlay only: do not intercept real mouse/touch events.
+        cursor.isClickable = false
+        cursor.isFocusable = false
         setContentView(frame)
         toolbar.visibility = View.GONE; web.visibility = View.GONE; drawer.visibility = View.GONE
     }
@@ -258,7 +303,20 @@ class MainActivity : AppCompatActivity() {
         fullscreen = null; fullscreenCallback?.onCustomViewHidden(); fullscreenCallback = null
         if (!showingHome) toolbar.visibility = View.VISIBLE
     }
+    override fun dispatchGenericMotionEvent(event: MotionEvent): Boolean {
+        if (event.isFromSource(android.view.InputDevice.SOURCE_MOUSE) &&
+            (event.actionMasked == MotionEvent.ACTION_HOVER_MOVE || event.actionMasked == MotionEvent.ACTION_MOVE)) {
+            cursor.visible = false
+            cursor.invalidate()
+            if (fullscreen == null) {
+                if (event.x < 28) drawer.visibility = View.VISIBLE
+                else if (event.x > 220) drawer.visibility = View.GONE
+            }
+        }
+        return super.dispatchGenericMotionEvent(event)
+    }
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        if (currentFocus is EditText) return super.dispatchKeyEvent(event)
         if (event.action == KeyEvent.ACTION_DOWN && fullscreen == null && event.keyCode in listOf(
                 KeyEvent.KEYCODE_DPAD_LEFT, KeyEvent.KEYCODE_DPAD_RIGHT,
                 KeyEvent.KEYCODE_DPAD_UP, KeyEvent.KEYCODE_DPAD_DOWN)) {
@@ -294,18 +352,22 @@ class MainActivity : AppCompatActivity() {
         }
         fun click(target: WebView) {
             if (!visible) return
-            val down = android.os.SystemClock.uptimeMillis()
-            val x = px; val y = py
-            // Dispatch at the actual screen coordinate to allow toolbar, drawer and home clicks.
-            val hit = IntArray(2); target.getLocationOnScreen(hit)
-            val webX = x - hit[0]; val webY = y - hit[1]
-            if (!showingHome && webX >= 0 && webY >= 0 && webY < target.height) {
-                target.dispatchTouchEvent(MotionEvent.obtain(down, down, MotionEvent.ACTION_DOWN, webX, webY, 0))
-                target.dispatchTouchEvent(MotionEvent.obtain(down, down + 60, MotionEvent.ACTION_UP, webX, webY, 0))
+            val point = IntArray(2)
+            target.getLocationOnScreen(point)
+            if (!showingHome && px >= point[0] && py >= point[1] &&
+                px < point[0] + target.width && py < point[1] + target.height) {
+                sendTap(target, px - point[0], py - point[1])
             } else {
-                val rootPoint = IntArray(2); frame.getLocationOnScreen(rootPoint)
-                val child = findClickable(frame, x, y)
-                child?.performClick()
+                val child = findClickable(frame, px, py)
+                if (child != null) {
+                    val location = IntArray(2); child.getLocationOnScreen(location)
+                    if (child is EditText) {
+                        child.requestFocus()
+                        child.setSelection(child.text.length)
+                        (getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager)
+                            .showSoftInput(child, InputMethodManager.SHOW_IMPLICIT)
+                    } else sendTap(child, px - location[0], py - location[1])
+                }
             }
         }
         override fun onDraw(canvas: Canvas) {
@@ -318,6 +380,11 @@ class MainActivity : AppCompatActivity() {
             canvas.drawPath(path, paint)
         }
     }
+    private fun sendTap(view: View, x: Float, y: Float) {
+        val now = android.os.SystemClock.uptimeMillis()
+        view.dispatchTouchEvent(MotionEvent.obtain(now, now, MotionEvent.ACTION_DOWN, x, y, 0))
+        view.dispatchTouchEvent(MotionEvent.obtain(now, now + 80, MotionEvent.ACTION_UP, x, y, 0))
+    }
     private fun findClickable(group: ViewGroup, x: Float, y: Float): View? {
         for (i in group.childCount - 1 downTo 0) {
             val child = group.getChildAt(i)
@@ -325,7 +392,7 @@ class MainActivity : AppCompatActivity() {
             val loc = IntArray(2); child.getLocationOnScreen(loc)
             if (x < loc[0] || y < loc[1] || x >= loc[0] + child.width || y >= loc[1] + child.height) continue
             if (child is ViewGroup) findClickable(child, x, y)?.let { return it }
-            if (child.isClickable) return child
+            if (child.isClickable || child is EditText) return child
         }
         return null
     }
