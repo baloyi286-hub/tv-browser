@@ -23,10 +23,10 @@ class MainActivity : AppCompatActivity() {
         "adnxs.com", "taboola.com", "outbrain.com", "popads.net",
         "popcash.net", "scorecardresearch.com"
     )
-    private fun isBlocked(url: String): Boolean = try {
+    private fun isBlocked(url: String): Boolean { return try {
         val host = URI(url).host?.lowercase() ?: return false
         blockedHosts.any { host == it || host.endsWith(".$it") }
-    } catch (_: Exception) { false }
+    } catch (_: Exception) { false } }
     private fun detect(url: String) {
         val path = Uri.parse(url).path.orEmpty().lowercase()
         if (listOf(".mp4", ".webm", ".m3u8", ".mpd").any { path.endsWith(it) }) {
