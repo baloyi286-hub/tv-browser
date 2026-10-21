@@ -1,4 +1,4 @@
-# NOVA TV Browser
+# Khensoz TV Browser
 
 Android TV browser built with **Jetpack Compose for TV**, a modern floating-control UI, Media3 fullscreen player, and local Wi-Fi phone remote.
 
