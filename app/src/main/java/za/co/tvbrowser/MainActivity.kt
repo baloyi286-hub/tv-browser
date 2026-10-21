@@ -162,7 +162,7 @@ class MainActivity : AppCompatActivity() {
                 }
                 override fun onPageFinished(view: WebView?, url: String?) {
                     urlInput.setText(url.orEmpty())
-                    evaluateJavascript("""
+                    web.evaluateJavascript("""
                         (function(){
                           if(window.__tvScan)return;window.__tvScan=true;
                           const scan=()=>document.querySelectorAll('video,video source').forEach(v=>{
