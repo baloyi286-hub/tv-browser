@@ -266,7 +266,7 @@ class ComposeMainActivity : ComponentActivity() {
         cursorVisible = true
         cursorX = (cursorX + dx).coerceIn(0f, screenWidth)
         cursorY = (cursorY + dy).coerceIn(0f, screenHeight)
-        menu = if (menu) cursorX <= withMenuWidth() else cursorX < 36f
+        if (!videoPrompt && !downloadPrompt && !tabsOpen && !historyOpen) menu = if (menu) cursorX <= withMenuWidth() else cursorX < 36f
         edge(if (!page) 0 else if (cursorY >= screenHeight - 55f) 1 else if (cursorY < 25f) -1 else 0)
     }
     private fun withMenuWidth() = resources.displayMetrics.density * 230f
@@ -278,7 +278,7 @@ class ComposeMainActivity : ComponentActivity() {
         root.dispatchTouchEvent(MotionEvent.obtain(t,t+80,MotionEvent.ACTION_UP,cursorX,cursorY,0))
     }
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
-        if (currentFocus is android.widget.EditText || event.keyCode == KeyEvent.KEYCODE_BACK) return super.dispatchKeyEvent(event)
+        if (currentFocus is android.widget.EditText || event.keyCode == KeyEvent.KEYCODE_BACK || videoPrompt || downloadPrompt || tabsOpen || historyOpen) return super.dispatchKeyEvent(event)
         if (event.action == KeyEvent.ACTION_DOWN) {
             val delta = 29f
             when(event.keyCode) {
@@ -296,7 +296,7 @@ class ComposeMainActivity : ComponentActivity() {
             event.actionMasked in listOf(MotionEvent.ACTION_MOVE, MotionEvent.ACTION_HOVER_MOVE)) {
             cursorVisible = false
             val x = event.x; val y = event.y
-            menu = if (menu) x <= withMenuWidth() else x < 36f
+            if (!videoPrompt && !downloadPrompt && !tabsOpen && !historyOpen) menu = if (menu) x <= withMenuWidth() else x < 36f
             edge(if (!page) 0 else if (y > screenHeight - 55f) 1 else if (y < 25f) -1 else 0)
         }
         return super.dispatchGenericMotionEvent(event)
