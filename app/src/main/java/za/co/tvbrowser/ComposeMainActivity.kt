@@ -1,6 +1,16 @@
 package za.co.tvbrowser
 
 import android.app.DownloadManager
+import android.database.Cursor
+import org.json.JSONArray
+import org.json.JSONObject
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
+import androidx.compose.ui.input.pointer.positionChange
+import androidx.compose.ui.focus.focusTarget
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.ui.text.input.KeyboardType
 import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.Color as AndroidColor
@@ -77,7 +87,96 @@ class ComposeMainActivity : ComponentActivity() {
     private var activeTabId by mutableLongStateOf(-1L)
     private var tabsOpen by mutableStateOf(false)
     private var historyOpen by mutableStateOf(false)
-    private val history = mutableStateListOf<Pair<String,String>>()
+    private var bookmarksOpen by mutableStateOf(false)
+    private var bookmarkEditor by mutableStateOf(false)
+    private var downloadsOpen by mutableStateOf(false)
+    private var settingsOpen by mutableStateOf(false)
+    private var editBookmarkId by mutableLongStateOf(-1L)
+    private var bookmarkTitle by mutableStateOf("")
+    private var bookmarkUrl by mutableStateOf("")
+    private data class Bookmark(val id: Long,val title:String,val url:String)
+    private data class Visit(val title:String,val url:String,val time:Long)
+    private val bookmarks=mutableStateListOf<Bookmark>()
+    private val history=mutableStateListOf<Visit>()
+    private val downloadIds=mutableStateListOf<Long>()
+    private var downloadsVersion by mutableIntStateOf(0)
+    private var blockAds by mutableStateOf(true)
+    private var desktopMode by mutableStateOf(false)
+    private var javascriptEnabled by mutableStateOf(true)
+    private var searchEngine by mutableStateOf("Google")
+    private var homePage by mutableStateOf("https://www.google.com")
+    private val dataPrefs by lazy { getSharedPreferences("khensoz_data",MODE_PRIVATE) }
+    private fun loadData() {
+        try {
+            val bs=JSONArray(dataPrefs.getString("bookmarks","[]"))
+            for(i in 0 until bs.length()){val j=bs.getJSONObject(i);bookmarks.add(Bookmark(j.getLong("id"),j.getString("title"),j.getString("url")))}
+            val hs=JSONArray(dataPrefs.getString("history","[]"))
+            for(i in 0 until hs.length()){val j=hs.getJSONObject(i);history.add(Visit(j.getString("title"),j.getString("url"),j.getLong("time")))}
+            val ds=JSONArray(dataPrefs.getString("downloads","[]"))
+            for(i in 0 until ds.length())downloadIds.add(ds.getLong(i))
+        }catch(_:Exception){}
+        blockAds=dataPrefs.getBoolean("blockAds",true)
+        desktopMode=dataPrefs.getBoolean("desktop",false)
+        javascriptEnabled=dataPrefs.getBoolean("javascript",true)
+        searchEngine=dataPrefs.getString("search","Google") ?: "Google"
+        homePage=dataPrefs.getString("homepage","https://www.google.com") ?: "https://www.google.com"
+    }
+    private fun persistData() {
+        val bs=JSONArray();bookmarks.forEach { bs.put(JSONObject().put("id",it.id).put("title",it.title).put("url",it.url)) }
+        val hs=JSONArray();history.forEach { hs.put(JSONObject().put("title",it.title).put("url",it.url).put("time",it.time)) }
+        val ds=JSONArray();downloadIds.forEach { ds.put(it) }
+        dataPrefs.edit().putString("bookmarks",bs.toString()).putString("history",hs.toString()).putString("downloads",ds.toString())
+            .putBoolean("blockAds",blockAds).putBoolean("desktop",desktopMode).putBoolean("javascript",javascriptEnabled)
+            .putString("search",searchEngine).putString("homepage",homePage).apply()
+    }
+    private fun beginBookmark(bookmark:Bookmark?=null) {
+        editBookmarkId=bookmark?.id ?: -1L
+        bookmarkTitle=bookmark?.title ?: (activeTab()?.title?.takeIf { it.isNotBlank() && it!="New tab" } ?: currentUrl)
+        bookmarkUrl=bookmark?.url ?: currentUrl
+        bookmarkEditor=true
+    }
+    private fun saveBookmark() {
+        val url=bookmarkUrl.trim()
+        if(url.isBlank()){toast("Enter a URL");return}
+        val normalized=if(url.startsWith("http://")||url.startsWith("https://"))url else "https://$url"
+        val entry=Bookmark(if(editBookmarkId>=0)editBookmarkId else System.currentTimeMillis(),bookmarkTitle.ifBlank { normalized },normalized)
+        bookmarks.removeAll { it.id==entry.id }
+        bookmarks.add(0,entry);persistData();bookmarkEditor=false;toast("Bookmark saved")
+    }
+    private fun downloadRows():List<Triple<Long,String,String>> {
+        val dm=getSystemService(DOWNLOAD_SERVICE) as DownloadManager
+        return downloadIds.map { id ->
+            var title="Download $id";var status="Unknown"
+            try {
+                dm.query(DownloadManager.Query().setFilterById(id))?.use { cur ->
+                    if(cur.moveToFirst()){
+                        val name=cur.getColumnIndex(DownloadManager.COLUMN_TITLE)
+                        if(name>=0)title=cur.getString(name) ?: title
+                        val sc=cur.getInt(cur.getColumnIndexOrThrow(DownloadManager.COLUMN_STATUS))
+                        val bytes=cur.getLong(cur.getColumnIndexOrThrow(DownloadManager.COLUMN_BYTES_DOWNLOADED_SO_FAR))
+                        val total=cur.getLong(cur.getColumnIndexOrThrow(DownloadManager.COLUMN_TOTAL_SIZE_BYTES))
+                        status=when(sc){
+                            DownloadManager.STATUS_SUCCESSFUL->"Completed"
+                            DownloadManager.STATUS_FAILED->"Failed"
+                            DownloadManager.STATUS_PAUSED->"Paused"
+                            DownloadManager.STATUS_PENDING->"Queued"
+                            else->if(total>0)"Downloading ${bytes*100/total}%" else "Downloading"
+                        }
+                    }
+                }
+            }catch(_:Exception){}
+            Triple(id,title,status)
+        }
+    }
+    private fun refreshDownloads(){ downloadsVersion++ }
+    private fun applyWebSettings() {
+        tabs.forEach { tab ->
+            tab.view.settings.javaScriptEnabled=javascriptEnabled
+            tab.view.settings.userAgentString=if(desktopMode)
+                "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+                else null
+        }
+    }
     private val recentlyClosed = mutableStateListOf<Pair<String,String>>()
     private var web: WebView? = null
     private fun activeTab() = tabs.firstOrNull { it.id == activeTabId }
@@ -117,9 +216,9 @@ class ComposeMainActivity : ComponentActivity() {
     }
     private fun recordHistory(url: String, title: String) {
         if (!url.startsWith("http")) return
-        history.removeAll { it.second == url }
-        history.add(0, title.ifBlank { url } to url)
-        while (history.size > 40) history.removeAt(history.lastIndex)
+        history.add(0, Visit(title.ifBlank { url },url,System.currentTimeMillis()))
+        while (history.size > 500) history.removeAt(history.lastIndex)
+        persistData()
     }
     private var video by mutableStateOf<String?>(null)
     private var videoPrompt by mutableStateOf(false)
@@ -164,7 +263,7 @@ class ComposeMainActivity : ComponentActivity() {
         val url = when {
             query.startsWith("https://", true) || query.startsWith("http://", true) -> query
             query.contains(".") && !query.contains(" ") -> "https://$query"
-            else -> "https://www.google.com/search?q=${Uri.encode(query)}"
+            else -> when(searchEngine) { "Bing" -> "https://www.bing.com/search?q=${Uri.encode(query)}"; "DuckDuckGo" -> "https://duckduckgo.com/?q=${Uri.encode(query)}"; else -> "https://www.google.com/search?q=${Uri.encode(query)}" }
         }
         video = null; lastPrompt = ""; page = true; menu = false
         currentUrl = url; address = url
@@ -187,7 +286,8 @@ class ComposeMainActivity : ComponentActivity() {
             val request = DownloadManager.Request(Uri.parse(link))
                 .setTitle("Khensoz video").setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
                 .setDestinationInExternalFilesDir(this, Environment.DIRECTORY_MOVIES, "khensoz-${System.currentTimeMillis()}.mp4")
-            (getSystemService(DOWNLOAD_SERVICE) as DownloadManager).enqueue(request)
+            val id=(getSystemService(DOWNLOAD_SERVICE) as DownloadManager).enqueue(request)
+            downloadIds.add(0,id);persistData()
             toast("Download started")
         } catch (e: Exception) { toast("Download failed: ${e.message}") }
         downloadPrompt = false
@@ -205,7 +305,7 @@ class ComposeMainActivity : ComponentActivity() {
         }
     }
     private fun createBrowser(): WebView = WebView(this).apply {
-        settings.javaScriptEnabled = true
+        settings.javaScriptEnabled = javascriptEnabled
         settings.domStorageEnabled = true
         settings.mediaPlaybackRequiresUserGesture = true
         settings.javaScriptCanOpenWindowsAutomatically = false
@@ -221,7 +321,7 @@ class ComposeMainActivity : ComponentActivity() {
                 detect(url)
                 val host = try { URI(url).host?.lowercase().orEmpty() } catch (_: Exception) { "" }
                 val blocked = listOf("doubleclick.net", "googlesyndication.com", "googleadservices.com", "adnxs.com", "taboola.com", "outbrain.com", "popads.net")
-                return if (blocked.any { host == it || host.endsWith(".$it") })
+                return if (blockAds && blocked.any { host == it || host.endsWith(".$it") })
                     WebResourceResponse("text/plain", "UTF-8", java.io.ByteArrayInputStream(byteArrayOf()))
                 else null
             }
@@ -265,7 +365,7 @@ class ComposeMainActivity : ComponentActivity() {
         cursorVisible = true
         cursorX = (cursorX + dx).coerceIn(0f, screenWidth)
         cursorY = (cursorY + dy).coerceIn(0f, screenHeight)
-        if (!videoPrompt && !downloadPrompt && !tabsOpen && !historyOpen) menu = if (menu) cursorX <= withMenuWidth() else cursorX < 36f
+        if (!videoPrompt && !downloadPrompt && !tabsOpen && !historyOpen && !bookmarksOpen && !bookmarkEditor && !downloadsOpen && !settingsOpen) menu = if (menu) cursorX <= withMenuWidth() else cursorX < 36f
         edge(if (!page) 0 else if (cursorY >= screenHeight - 55f) 1 else if (cursorY < 25f) -1 else 0)
     }
     private fun withMenuWidth() = resources.displayMetrics.density * 230f
@@ -277,7 +377,7 @@ class ComposeMainActivity : ComponentActivity() {
         root.dispatchTouchEvent(MotionEvent.obtain(t,t+80,MotionEvent.ACTION_UP,cursorX,cursorY,0))
     }
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
-        if (currentFocus is android.widget.EditText || event.keyCode == KeyEvent.KEYCODE_BACK || videoPrompt || downloadPrompt || tabsOpen || historyOpen) return super.dispatchKeyEvent(event)
+        if (currentFocus is android.widget.EditText || event.keyCode == KeyEvent.KEYCODE_BACK || videoPrompt || downloadPrompt || tabsOpen || historyOpen || bookmarksOpen || bookmarkEditor || downloadsOpen || settingsOpen) return super.dispatchKeyEvent(event)
         if (event.action == KeyEvent.ACTION_DOWN) {
             val delta = 29f
             when(event.keyCode) {
@@ -303,7 +403,9 @@ class ComposeMainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         window.decorView.systemUiVisibility = 5894
+        loadData()
         newTab()
+        applyWebSettings()
         try {
             remote = PhoneRemote { action, x, y, value -> runOnUiThread {
                 when(action) {
@@ -325,6 +427,10 @@ class ComposeMainActivity : ComponentActivity() {
         when {
             tabsOpen -> tabsOpen = false
             historyOpen -> historyOpen = false
+            bookmarksOpen -> bookmarksOpen=false
+            bookmarkEditor -> bookmarkEditor=false
+            downloadsOpen -> downloadsOpen=false
+            settingsOpen -> settingsOpen=false
             videoPrompt -> videoPrompt = false
             downloadPrompt -> downloadPrompt = false
             menu -> menu = false
@@ -368,6 +474,10 @@ class ComposeMainActivity : ComponentActivity() {
             }
             if (tabsOpen) TabPicker()
             if (historyOpen) HistoryPicker()
+            if (bookmarksOpen) BookmarksPicker()
+            if (bookmarkEditor) BookmarkEditor()
+            if (downloadsOpen) DownloadsPicker()
+            if (settingsOpen) SettingsPicker()
             if (videoPrompt) DialogPanel("Video detected", "Play this video in the fullscreen TV player?", "Play", { play() }, "Later", { videoPrompt=false })
             if (downloadPrompt) DialogPanel("Save video", "Choose the destination", "TV storage", { saveInternal() }, "USB / Folder", {
                 downloadPrompt=false
@@ -386,7 +496,7 @@ class ComposeMainActivity : ComponentActivity() {
             FloatingIcon(Icons.Rounded.PlayArrow,"Play",video!=null) { play() }
             FloatingIcon(Icons.Rounded.FileDownload,"Download") { download() }
             FloatingIcon(Icons.Rounded.Tab,"Tabs") { tabsOpen = true }
-            FloatingIcon(Icons.Rounded.Menu,"Menu") { menu=!menu }
+            FloatingIcon(Icons.Rounded.Star,"Add bookmark") { beginBookmark() }
         }
     }
     @Composable private fun HomeScreen() {
@@ -465,10 +575,9 @@ class ComposeMainActivity : ComponentActivity() {
             listOf(
                 Triple(Icons.Rounded.Home,"Home",{home()}),
                 Triple(Icons.Rounded.History,"History",{menu=false;historyOpen=true}),
-                Triple(Icons.Rounded.BookmarkAdd,"Bookmark",{getSharedPreferences("browser",MODE_PRIVATE).edit().putString("bookmark",currentUrl).apply();toast("Saved")}),
-                Triple(Icons.Rounded.Bookmarks,"Saved",{getSharedPreferences("browser",MODE_PRIVATE).getString("bookmark",null)?.let { navigate(it) }; Unit}),
-                Triple(Icons.Rounded.PlayArrow,"Play video",{play()}),
-                Triple(Icons.Rounded.FileDownload,"Download",{download()}),
+                Triple(Icons.Rounded.Bookmarks,"Bookmarks",{menu=false;bookmarksOpen=true}),
+                Triple(Icons.Rounded.FileDownload,"Downloads",{menu=false;refreshDownloads();downloadsOpen=true}),
+                Triple(Icons.Rounded.Settings,"Settings",{menu=false;settingsOpen=true}),
                 Triple(Icons.Rounded.Close,"Close",{menu=false})
             ).forEach { (icon,label,action) ->
                 var hovered by remember { mutableStateOf(false) }
