@@ -69,12 +69,12 @@ class PhoneRemote(private val onAction: (String, Int, Int, String) -> Unit) : Na
           <div class="controls"><button onclick="send('left')">←</button><button onclick="send('up')">↑</button><button onclick="send('right')">→</button><button onclick="send('down')">↓</button><button onclick="send('select')">OK / Select</button></div>
           <div class="controls"><button onclick="send('subtitles')">CC Subtitles</button><button onclick="send('seekback')">↶ 10s</button><button onclick="send('seekforward')">10s ↷</button></div>
           <div id="pad"><div class="cursor">⌁</div><strong>Touchpad</strong><small>Move to navigate · Tap to select</small></div>
-          <div class="search"><input id="txt" placeholder="Search or enter URL" enterkeyhint="go"><button onclick="navigate()">Open →</button></div>
+          <div class="search"><input id="txt" placeholder="Type in the selected TV text field" enterkeyhint="go"><button onclick="navigate()">Go / Enter →</button></div>
           <div class="scroll"><button onclick="send('scroll',0,-100)">↑ Scroll up</button><button onclick="send('scroll',0,100)">↓ Scroll down</button></div>
           <script>
           const token=new URLSearchParams(location.search).get('token');
           function send(action,x=0,y=0,value=''){fetch('/control?'+new URLSearchParams({token,action,x,y,value})).catch(()=>{});}
-          function navigate(){send('go',0,0,document.getElementById('txt').value);document.activeElement.blur()}
+          function navigate(){send('go',0,0,document.getElementById('txt').value);document.activeElement.blur()}\n          document.getElementById('txt').addEventListener('input',e=>send('text',0,0,e.target.value));
           document.getElementById('txt').addEventListener('keydown',e=>{if(e.key==='Enter')navigate()});
           const pad=document.getElementById('pad');let px=0,py=0,moved=false;
           pad.onpointerdown=e=>{px=e.clientX;py=e.clientY;moved=false;pad.setPointerCapture(e.pointerId)};
