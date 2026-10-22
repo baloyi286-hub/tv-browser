@@ -398,20 +398,24 @@ class ComposeMainActivity : ComponentActivity() {
         }
         return super.dispatchGenericMotionEvent(event)
     }
+    private var phoneFocusCommand by mutableIntStateOf(0)
+    private var phoneFocusDirection by mutableStateOf("down")
+    private var phoneFocusedAction: (() -> Unit)? = null
     private fun phoneKey(action:String) {
-        val key=when(action){
-            "up"->KeyEvent.KEYCODE_DPAD_UP
-            "down"->KeyEvent.KEYCODE_DPAD_DOWN
-            "left"->KeyEvent.KEYCODE_DPAD_LEFT
-            "right"->KeyEvent.KEYCODE_DPAD_RIGHT
-            "select"->KeyEvent.KEYCODE_DPAD_CENTER
-            else->return
+        if(action=="select") phoneFocusedAction?.invoke()
+        else { phoneFocusDirection=action;phoneFocusCommand++ }
+    }
+    @Composable private fun PhoneDialogNavigation() {
+        val focusManager=LocalFocusManager.current
+        val command=phoneFocusCommand
+        LaunchedEffect(command) {
+            if(command>0) focusManager.moveFocus(when(phoneFocusDirection){
+                "up"->androidx.compose.ui.focus.FocusDirection.Up
+                "left"->androidx.compose.ui.focus.FocusDirection.Left
+                "right"->androidx.compose.ui.focus.FocusDirection.Right
+                else->androidx.compose.ui.focus.FocusDirection.Down
+            })
         }
-        // Inject into the currently focused window, including Compose Dialog windows.
-        Thread {
-            try { android.app.Instrumentation().sendKeyDownUpSync(key) }
-            catch(e:Exception){runOnUiThread { toast("Remote key failed: ${e.message}") }}
-        }.start()
     }
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -571,7 +575,7 @@ class ComposeMainActivity : ComponentActivity() {
         Box(Modifier.size(50.dp).scale(scale).clip(RoundedCornerShape(18.dp))
             .background(if(focused)Color(0xFF366E65) else slate)
             .clickable(enabled=enabled,onClick=onClick)
-            .onFocusChanged { focused=it.isFocused }
+            .onFocusChanged { focused=it.isFocused; if(it.isFocused) phoneFocusedAction=onClick }
             .focusable(),contentAlignment=Alignment.Center) {
             Icon(icon,contentDescription=label,tint=if(enabled)white else white.copy(alpha=.35f),modifier=Modifier.size(26.dp))
         }
@@ -613,6 +617,7 @@ class ComposeMainActivity : ComponentActivity() {
     }
     @Composable private fun TabPicker() {
         Dialog(onDismissRequest={tabsOpen=false},properties=DialogProperties(usePlatformDefaultWidth=false)) {
+            PhoneDialogNavigation()
             Column(Modifier.width(650.dp).clip(RoundedCornerShape(28.dp)).background(Color(0xFF1A3042)).padding(26.dp),
                 verticalArrangement=Arrangement.spacedBy(12.dp)) {
                 Text("OPEN TABS",fontSize=24.sp,fontWeight=FontWeight.Bold,color=mint)
@@ -643,6 +648,7 @@ class ComposeMainActivity : ComponentActivity() {
     }
     @Composable private fun LibraryDialog(title:String,onDismiss:()->Unit,content:@Composable ColumnScope.()->Unit) {
         Dialog(onDismissRequest=onDismiss,properties=DialogProperties(usePlatformDefaultWidth=false)) {
+            PhoneDialogNavigation()
             Column(Modifier.fillMaxWidth(.92f).fillMaxHeight(.88f).clip(RoundedCornerShape(25.dp))
                 .background(Color(0xFF172C3E)).padding(25.dp),verticalArrangement=Arrangement.spacedBy(12.dp)) {
                 Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.SpaceBetween) {
@@ -689,6 +695,7 @@ class ComposeMainActivity : ComponentActivity() {
     }
     @Composable private fun BookmarkEditor() {
         Dialog(onDismissRequest={bookmarkEditor=false},properties=DialogProperties(usePlatformDefaultWidth=false)) {
+            PhoneDialogNavigation()
             Column(Modifier.width(600.dp).clip(RoundedCornerShape(26.dp)).background(Color(0xFF172C3E)).padding(25.dp),
                 verticalArrangement=Arrangement.spacedBy(17.dp)) {
                 Text(if(editBookmarkId>=0)"Edit bookmark" else "Add bookmark",fontSize=26.sp,color=mint)
@@ -760,6 +767,7 @@ class ComposeMainActivity : ComponentActivity() {
     }
     @Composable private fun HomepageEditor() {
         Dialog(onDismissRequest={homepageEditor=false},properties=DialogProperties(usePlatformDefaultWidth=false)) {
+            PhoneDialogNavigation()
             Column(Modifier.width(600.dp).clip(RoundedCornerShape(26.dp)).background(Color(0xFF172C3E)).padding(25.dp),
                 verticalArrangement=Arrangement.spacedBy(18.dp)) {
                 Text("Home page URL",fontSize=25.sp,color=mint)
@@ -775,6 +783,7 @@ class ComposeMainActivity : ComponentActivity() {
     }
     @Composable private fun DialogPanel(title:String,description:String,primary:String,onPrimary:()->Unit,secondary:String,onSecondary:()->Unit) {
         Dialog(onDismissRequest={videoPrompt=false;downloadPrompt=false},properties=DialogProperties(usePlatformDefaultWidth=false)) {
+            PhoneDialogNavigation()
             Column(Modifier.width(480.dp).clip(RoundedCornerShape(30.dp)).background(Color(0xFF1A3042)).padding(30.dp),
                 verticalArrangement=Arrangement.spacedBy(20.dp)) {
                 Text(title,fontSize=26.sp,fontWeight=FontWeight.Bold,color=white)
