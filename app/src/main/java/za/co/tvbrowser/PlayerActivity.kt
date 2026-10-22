@@ -118,7 +118,7 @@ class PlayerActivity : ComponentActivity() {
         player.seekTo(prefs.getLong(url,0L));player.playWhenReady=true
         val filter=IntentFilter("za.co.tvbrowser.PLAYER_REMOTE")
         if(Build.VERSION.SDK_INT>=33)registerReceiver(remoteReceiver,filter,Context.RECEIVER_NOT_EXPORTED)
-        else { @Suppress("DEPRECATION") registerReceiver(remoteReceiver,filter) }
+        else { registerReceiver(remoteReceiver,filter) }
         handler.post(ticker)
         revealControls()
         setContent {
