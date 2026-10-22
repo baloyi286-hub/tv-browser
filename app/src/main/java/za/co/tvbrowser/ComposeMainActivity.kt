@@ -400,6 +400,21 @@ class ComposeMainActivity : ComponentActivity() {
         }
         return super.dispatchGenericMotionEvent(event)
     }
+    private fun phoneKey(action:String) {
+        val key=when(action){
+            "up"->KeyEvent.KEYCODE_DPAD_UP
+            "down"->KeyEvent.KEYCODE_DPAD_DOWN
+            "left"->KeyEvent.KEYCODE_DPAD_LEFT
+            "right"->KeyEvent.KEYCODE_DPAD_RIGHT
+            "select"->KeyEvent.KEYCODE_DPAD_CENTER
+            else->return
+        }
+        // Inject into the currently focused window, including Compose Dialog windows.
+        Thread {
+            try { android.app.Instrumentation().sendKeyDownUpSync(key) }
+            catch(e:Exception){runOnUiThread { toast("Remote key failed: ${e.message}") }}
+        }.start()
+    }
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         window.decorView.systemUiVisibility = 5894
@@ -409,8 +424,12 @@ class ComposeMainActivity : ComponentActivity() {
         try {
             remote = PhoneRemote { action, x, y, value -> runOnUiThread {
                 when(action) {
-                    "move" -> move(x.toFloat(),y.toFloat())
-                    "click" -> tapCursor()
+                    "move" -> if(videoPrompt || downloadPrompt || bookmarkEditor || tabsOpen || historyOpen || bookmarksOpen || downloadsOpen || settingsOpen) {
+                        if(kotlin.math.abs(x)>kotlin.math.abs(y) && kotlin.math.abs(x)>16) phoneKey(if(x>0)"right" else "left")
+                        else if(kotlin.math.abs(y)>16) phoneKey(if(y>0)"down" else "up")
+                    } else move(x.toFloat(),y.toFloat())
+                    "click" -> if(videoPrompt || downloadPrompt || bookmarkEditor || tabsOpen || historyOpen || bookmarksOpen || downloadsOpen || settingsOpen) phoneKey("select") else tapCursor()
+                    "up","down","left","right","select" -> phoneKey(action)
                     "back" -> back()
                     "home" -> home()
                     "play" -> play()
