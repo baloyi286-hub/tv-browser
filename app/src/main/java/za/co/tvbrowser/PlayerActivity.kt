@@ -69,6 +69,9 @@ class PlayerActivity : ComponentActivity() {
         override fun onReceive(context:Context?,intent:Intent?) {
             when(intent?.getStringExtra("key")) {
                 "select"->if(controlsVisible)activateControl() else togglePlayback()
+                "toggle"->togglePlayback()
+                "seekback"->seek(-10000)
+                "seekforward"->seek(10000)
                 "left"->{ if(controlsVisible)selectedControl=(selectedControl-1).coerceAtLeast(0) else seek(-10000);revealControls() }
                 "right"->{ if(controlsVisible)selectedControl=(selectedControl+1).coerceAtMost(3) else seek(10000);revealControls() }
                 "up","down","show"->revealControls()
