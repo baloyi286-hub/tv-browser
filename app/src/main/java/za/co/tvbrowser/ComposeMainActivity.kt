@@ -503,6 +503,7 @@ class ComposeMainActivity : ComponentActivity() {
                     "back" -> if(playerActive) playerCommand("back") else back()
                     "home" -> if(playerActive) playerCommand("back") else home()
                     "play" -> if(playerActive) playerCommand("select") else play()
+                    "subtitles" -> if(playerActive) playerCommand("subtitles")
                     "scroll" -> web?.scrollBy(0,y*4)
                     "go" -> navigate(value)
                     "text" -> if(page) address=value else homeSearch=value
