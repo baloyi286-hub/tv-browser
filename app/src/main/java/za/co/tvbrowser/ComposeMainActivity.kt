@@ -24,6 +24,9 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.*
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import androidx.compose.foundation.focusable
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.focus.FocusRequester
@@ -78,6 +81,8 @@ private val white = Color(0xFFF2F9FB)
 
 class ComposeMainActivity : ComponentActivity() {
     private var remote: PhoneRemote? = null
+    private var homeScrollState: androidx.compose.foundation.ScrollState? = null
+    private fun scrollHome(amount:Int) { homeScrollState?.let { state -> CoroutineScope(Dispatchers.Main).launch { state.scrollTo((state.value+amount).coerceIn(0,state.maxValue)) } } }
     private var playerActive=false
     private var activeComposeInput: ((String)->Unit)? = null
     private var activeComposeSubmit: (() -> Unit)? = null
@@ -292,8 +297,8 @@ class ComposeMainActivity : ComponentActivity() {
     private val handler = android.os.Handler(android.os.Looper.getMainLooper())
     private val scrollTick = object : Runnable {
         override fun run() {
-            if (edgeScrollDirection == 0 || !page) return
-            web?.scrollBy(0, edgeScrollDirection * 38)
+            if (edgeScrollDirection == 0) return
+            if(page) web?.scrollBy(0,edgeScrollDirection*38) else scrollHome(edgeScrollDirection*38)
             handler.postDelayed(this, 65)
         }
     }
@@ -452,7 +457,7 @@ class ComposeMainActivity : ComponentActivity() {
         cursorX = (cursorX + dx).coerceIn(0f, screenWidth)
         cursorY = (cursorY + dy).coerceIn(0f, screenHeight)
         if (!videoPrompt && !downloadPrompt && !tabsOpen && !historyOpen && !bookmarksOpen && !bookmarkEditor && !downloadsOpen && !settingsOpen && !homepageEditor && !resumeOpen && !excludedEditor) menu = if (menu) cursorX <= withMenuWidth() else cursorX < 36f
-        edge(if (!page) 0 else if (cursorY >= screenHeight - 55f) 1 else if (cursorY < 25f) -1 else 0)
+        edge(if (cursorY >= screenHeight - 55f) 1 else if (cursorY < 25f) -1 else 0)
     }
     private fun withMenuWidth() = resources.displayMetrics.density * 230f
     private fun tapCursor() {
@@ -482,7 +487,7 @@ class ComposeMainActivity : ComponentActivity() {
             cursorVisible = false
             val x = event.x; val y = event.y
             if (!videoPrompt && !downloadPrompt && !tabsOpen && !historyOpen) menu = if (menu) x <= withMenuWidth() else x < 36f
-            edge(if (!page) 0 else if (y > screenHeight - 55f) 1 else if (y < 25f) -1 else 0)
+            edge(if (y > screenHeight - 55f) 1 else if (y < 25f) -1 else 0)
         }
         return super.dispatchGenericMotionEvent(event)
     }
@@ -526,7 +531,7 @@ class ComposeMainActivity : ComponentActivity() {
                     "seekback" -> if(playerActive) playerCommand("seekback")
                     "seekforward" -> if(playerActive) playerCommand("seekforward")
                     "subtitles" -> if(playerActive) playerCommand("subtitles")
-                    "scroll" -> web?.scrollBy(0,y*4)
+                    "scroll" -> if(page)web?.scrollBy(0,y*4) else scrollHome(y*4)
                     "go" -> {
                         if(phoneTextFocused && activeComposeSubmit!=null) activeComposeSubmit?.invoke()
                         else if(page && web?.hasFocus()==true) web?.evaluateJavascript("(function(){let e=document.activeElement;if(e && e.form)e.form.requestSubmit();})()",null)
@@ -629,7 +634,9 @@ class ComposeMainActivity : ComponentActivity() {
     }
     @Composable private fun HomeScreen() {
         val background = Brush.linearGradient(listOf(Color(0xFF0B1D30),Color(0xFF1A3A45),Color(0xFF10192B)))
-        Column(Modifier.fillMaxSize().background(background).verticalScroll(rememberScrollState()).padding(start=105.dp,top=35.dp,end=44.dp,bottom=20.dp), verticalArrangement=Arrangement.spacedBy(15.dp)) {
+        val scrollState=rememberScrollState()
+        SideEffect { homeScrollState=scrollState }
+        Column(Modifier.fillMaxSize().background(background).verticalScroll(scrollState).padding(start=105.dp,top=35.dp,end=44.dp,bottom=20.dp), verticalArrangement=Arrangement.spacedBy(15.dp)) {
             Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(24.dp)) {
                 Column(verticalArrangement=Arrangement.spacedBy(4.dp)) {
                     Row(verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(15.dp)) {
