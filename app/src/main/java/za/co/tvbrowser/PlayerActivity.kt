@@ -45,6 +45,8 @@ class PlayerActivity : ComponentActivity() {
     private var showSubtitles by mutableStateOf(false)
     private var controlsVisible by mutableStateOf(true)
     private var playing by mutableStateOf(true)
+    private var selectedControl by mutableIntStateOf(1)
+    private fun activateControl() { when(selectedControl){0->seek(-10000);1->togglePlayback();2->seek(10000);3->{showSubtitles=true;revealControls()} } }
     private var progress by mutableLongStateOf(0L)
     private var duration by mutableLongStateOf(0L)
     private val handler=android.os.Handler(android.os.Looper.getMainLooper())
@@ -66,9 +68,9 @@ class PlayerActivity : ComponentActivity() {
     private val remoteReceiver=object:BroadcastReceiver() {
         override fun onReceive(context:Context?,intent:Intent?) {
             when(intent?.getStringExtra("key")) {
-                "select"->togglePlayback()
-                "left"->seek(-10000)
-                "right"->seek(10000)
+                "select"->if(controlsVisible)activateControl() else togglePlayback()
+                "left"->{ if(controlsVisible)selectedControl=(selectedControl-1).coerceAtLeast(0) else seek(-10000);revealControls() }
+                "right"->{ if(controlsVisible)selectedControl=(selectedControl+1).coerceAtMost(3) else seek(10000);revealControls() }
                 "up","down","show"->revealControls()
                 "subtitles"->{ showSubtitles=true;revealControls() }
                 "back"->finish()
@@ -138,10 +140,10 @@ class PlayerActivity : ComponentActivity() {
                             }
                             Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.Center,
                                 verticalAlignment=Alignment.CenterVertically) {
-                                Control(Icons.Rounded.Replay10,"Back 10 seconds") { seek(-10000) }
-                                Control(if(playing)Icons.Rounded.Pause else Icons.Rounded.PlayArrow,"Play or pause") { togglePlayback() }
-                                Control(Icons.Rounded.Forward10,"Forward 10 seconds") { seek(10000) }
-                                Control(Icons.Rounded.Subtitles,"Subtitles") { showSubtitles=true;revealControls() }
+                                Control(Icons.Rounded.Replay10,"Back 10 seconds",selectedControl==0) { seek(-10000) }
+                                Control(if(playing)Icons.Rounded.Pause else Icons.Rounded.PlayArrow,"Play or pause",selectedControl==1) { togglePlayback() }
+                                Control(Icons.Rounded.Forward10,"Forward 10 seconds",selectedControl==2) { seek(10000) }
+                                Control(Icons.Rounded.Subtitles,"Subtitles",selectedControl==3) { showSubtitles=true;revealControls() }
                                 Text("${progress/60000} / ${duration/60000} min",color=Color.White,fontSize=15.sp)
                             }
                         }
@@ -173,10 +175,10 @@ class PlayerActivity : ComponentActivity() {
             }
         }
     }
-    @Composable private fun Control(icon:androidx.compose.ui.graphics.vector.ImageVector,label:String,click:()->Unit) {
+    @Composable private fun Control(icon:androidx.compose.ui.graphics.vector.ImageVector,label:String,selected:Boolean,click:()->Unit) {
         var focused by remember { mutableStateOf(false) }
         Box(Modifier.padding(horizontal=10.dp).size(64.dp).clip(RoundedCornerShape(18.dp))
-            .background(if(focused)Color(0xFF397E6E) else Color(0xFF24394B))
+            .background(if(focused || selected)Color(0xFF397E6E) else Color(0xFF24394B))
             .onFocusChanged { focused=it.isFocused }.clickable(onClick=click).focusable(),
             contentAlignment=Alignment.Center) {
             Icon(icon,contentDescription=label,tint=Color.White,modifier=Modifier.size(30.dp))
@@ -186,9 +188,18 @@ class PlayerActivity : ComponentActivity() {
         if(event.action==KeyEvent.ACTION_DOWN){
             if(showSubtitles)return super.dispatchKeyEvent(event)
             when(event.keyCode){
-                KeyEvent.KEYCODE_DPAD_CENTER,KeyEvent.KEYCODE_ENTER,KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE -> { togglePlayback();return true }
-                KeyEvent.KEYCODE_DPAD_LEFT -> { seek(-10000);return true }
-                KeyEvent.KEYCODE_DPAD_RIGHT -> { seek(10000);return true }
+                KeyEvent.KEYCODE_DPAD_CENTER,KeyEvent.KEYCODE_ENTER,KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE -> {
+                    if(controlsVisible)activateControl() else togglePlayback()
+                    return true
+                }
+                KeyEvent.KEYCODE_DPAD_LEFT -> {
+                    if(controlsVisible)selectedControl=(selectedControl-1).coerceAtLeast(0) else seek(-10000)
+                    revealControls();return true
+                }
+                KeyEvent.KEYCODE_DPAD_RIGHT -> {
+                    if(controlsVisible)selectedControl=(selectedControl+1).coerceAtMost(3) else seek(10000)
+                    revealControls();return true
+                }
                 KeyEvent.KEYCODE_DPAD_UP,KeyEvent.KEYCODE_DPAD_DOWN -> { revealControls();return true }
             }
         }
