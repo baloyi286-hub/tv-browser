@@ -333,6 +333,8 @@ class ComposeMainActivity : ComponentActivity() {
         if (listOf(".mp4", ".m3u8", ".mpd", ".webm", ".m4v").none { path.endsWith(it) }) return
         runOnUiThread {
             if (!page || link == video) return@runOnUiThread
+            val source=thumbnailFile(currentUrl)
+            if(source.exists() && !isHidden(currentUrl) && !isHidden(link))runCatching { source.copyTo(thumbnailFile(link),overwrite=true) }
             video = link
             activeTab()?.video = link
             if (lastPrompt != link) { lastPrompt = link; videoPrompt = true }
@@ -498,7 +500,7 @@ class ComposeMainActivity : ComponentActivity() {
                         if(kotlin.math.abs(x)>kotlin.math.abs(y) && kotlin.math.abs(x)>16) phoneKey(if(x>0)"right" else "left")
                         else if(kotlin.math.abs(y)>16) phoneKey(if(y>0)"down" else "up")
                     } else move(x.toFloat(),y.toFloat())
-                    "click" -> if(playerActive) playerCommand("select") else if(videoPrompt || downloadPrompt || bookmarkEditor || tabsOpen || historyOpen || bookmarksOpen || downloadsOpen || settingsOpen || resumeOpen || excludedEditor) phoneKey("select") else tapCursor()
+                    "click" -> if(playerActive) playerCommand("select") else if(videoPrompt || downloadPrompt || bookmarkEditor || tabsOpen || historyOpen || bookmarksOpen || downloadsOpen || settingsOpen || resumeOpen || excludedEditor || homepageEditor) phoneKey("select") else tapCursor()
                     "up","down","left","right","select" -> if(playerActive) playerCommand(action) else phoneKey(action)
                     "back" -> if(playerActive) playerCommand("back") else back()
                     "home" -> if(playerActive) playerCommand("back") else home()
@@ -674,7 +676,7 @@ class ComposeMainActivity : ComponentActivity() {
         }
     }
     @Composable private fun SideMenu() {
-        Column(Modifier.width(210.dp).clip(RoundedCornerShape(topEnd=30.dp,bottomEnd=30.dp))
+        Column(Modifier.width(210.dp).fillMaxHeight().clip(RoundedCornerShape(topEnd=30.dp,bottomEnd=30.dp))
             .background(Brush.verticalGradient(listOf(Color(0xFF28465A),Color(0xFF14283B))))
             .padding(12.dp),verticalArrangement=Arrangement.spacedBy(11.dp)) {
             Text("Khensoz",fontSize=24.sp,fontWeight=FontWeight.Bold,color=mint,modifier=Modifier.padding(12.dp))
@@ -696,6 +698,7 @@ class ComposeMainActivity : ComponentActivity() {
                     Text(label,fontSize=16.sp,color=white)
                 }
             }
+            Spacer(Modifier.weight(1f))
             pairingLink?.let { link ->
                 Image(bitmap=remember(link){qr(link).asImageBitmap()},contentDescription="Pair phone QR code",
                     modifier=Modifier.align(Alignment.CenterHorizontally).size(116.dp)
