@@ -74,7 +74,8 @@ class PhoneRemote(private val onAction: (String, Int, Int, String) -> Unit) : Na
           <script>
           const token=new URLSearchParams(location.search).get('token');
           function send(action,x=0,y=0,value=''){return fetch('/control?'+new URLSearchParams({token,action,x,y,value}),{cache:'no-store'}).catch(()=>{});}
-          function navigate(){send('go',0,0,document.getElementById('txt').value);document.activeElement.blur()}\n          document.getElementById('txt').addEventListener('input',e=>send('text',0,0,e.target.value));
+          function navigate(){send('go',0,0,document.getElementById('txt').value);document.activeElement.blur()}
+          document.getElementById('txt').addEventListener('input',e=>send('text',0,0,e.target.value));
           document.getElementById('txt').addEventListener('keydown',e=>{if(e.key==='Enter')navigate()});
           const pad=document.getElementById('pad');let px=0,py=0,moved=false;
           pad.onpointerdown=e=>{px=e.clientX;py=e.clientY;moved=false;pad.setPointerCapture(e.pointerId)};
