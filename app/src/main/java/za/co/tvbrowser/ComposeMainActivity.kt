@@ -78,6 +78,9 @@ private val white = Color(0xFFF2F9FB)
 
 class ComposeMainActivity : ComponentActivity() {
     private var remote: PhoneRemote? = null
+    private var playerActive=false
+    private fun playerCommand(key:String) { sendBroadcast(Intent("za.co.tvbrowser.PLAYER_REMOTE").setPackage(packageName).putExtra("key",key)) }
+    override fun onResume() { super.onResume();playerActive=false }
     private data class BrowserTab(val id: Long, val view: WebView, var url: String = "", var title: String = "New tab", var video: String? = null)
     private val tabs = mutableStateListOf<BrowserTab>()
     private var activeTabId by mutableLongStateOf(-1L)
@@ -108,6 +111,7 @@ class ComposeMainActivity : ComponentActivity() {
     }
     private fun resumeVideo(url:String) {
         resumeOpen=false
+        playerActive=true
         startActivity(Intent(this,PlayerActivity::class.java).putExtra("url",url))
     }
     private var bookmarksOpen by mutableStateOf(false)
@@ -303,6 +307,7 @@ class ComposeMainActivity : ComponentActivity() {
     private fun play() {
         val link = video ?: return toast("No supported video detected")
         videoPrompt = false
+        playerActive=true
         startActivity(Intent(this, PlayerActivity::class.java).putExtra("url", link))
     }
     private fun download() {
@@ -359,6 +364,7 @@ class ComposeMainActivity : ComponentActivity() {
                 val finalUrl = url.orEmpty()
                 tab?.apply { this.url = finalUrl; this.title = view?.title?.takeIf { it.isNotBlank() } ?: finalUrl }
                 recordHistory(finalUrl, tab?.title ?: finalUrl)
+                if(view!=null && !isHidden(finalUrl)) savePageThumbnail(view,finalUrl)
                 if (tab?.id == activeTabId) { currentUrl = finalUrl; address = finalUrl }
                 view?.evaluateJavascript("""
                     (function(){
@@ -375,6 +381,37 @@ class ComposeMainActivity : ComponentActivity() {
         }
         webChromeClient = object : WebChromeClient() {
             override fun onCreateWindow(view: WebView?, isDialog: Boolean, isUserGesture: Boolean, resultMsg: android.os.Message?) = false
+        }
+    }
+    private fun thumbnailFile(url:String)=java.io.File(filesDir,"thumb_"+url.hashCode().toUInt().toString()+".png")
+    private fun savePageThumbnail(view:WebView,url:String) {
+        // Capture the actual rendered page at a small resolution after layout.
+        view.postDelayed({
+            if(view.width>0 && view.height>0)runCatching {
+                val bitmap=Bitmap.createBitmap(320,180,Bitmap.Config.RGB_565)
+                val canvas=android.graphics.Canvas(bitmap)
+                canvas.scale(320f/view.width,180f/view.height)
+                view.draw(canvas)
+                thumbnailFile(url).outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG,85,it) }
+                bitmap.recycle()
+            }
+        },1200)
+    }
+    @Composable private fun PageThumbnail(title:String,url:String,onClick:()->Unit) {
+        val file=remember(url){thumbnailFile(url)}
+        val bitmap=remember(url,history.size){runCatching { if(file.exists())android.graphics.BitmapFactory.decodeFile(file.path)?.asImageBitmap() else null }.getOrNull()}
+        var focused by remember { mutableStateOf(false) }
+        Column(Modifier.width(220.dp).clip(RoundedCornerShape(18.dp))
+            .background(if(focused)Color(0xFF356F67) else slate)
+            .onFocusChanged { focused=it.isFocused; if(it.isFocused)phoneFocusedAction=onClick }
+            .clickable(onClick=onClick).focusable().padding(8.dp),
+            verticalArrangement=Arrangement.spacedBy(7.dp)) {
+            if(bitmap!=null)Image(bitmap=bitmap,contentDescription=title,modifier=Modifier.fillMaxWidth().height(108.dp).clip(RoundedCornerShape(12.dp)))
+            else Box(Modifier.fillMaxWidth().height(108.dp).clip(RoundedCornerShape(12.dp)).background(Color(0xFF132D42)),contentAlignment=Alignment.Center) {
+                Icon(Icons.Rounded.Language,contentDescription=null,tint=mint,modifier=Modifier.size(48.dp))
+            }
+            Text(title,fontSize=15.sp,color=white,maxLines=1,overflow=TextOverflow.Ellipsis)
+            Text(url,fontSize=11.sp,color=white.copy(alpha=.7f),maxLines=1,overflow=TextOverflow.Ellipsis)
         }
     }
     private fun qr(link: String): Bitmap {
@@ -461,11 +498,11 @@ class ComposeMainActivity : ComponentActivity() {
                         if(kotlin.math.abs(x)>kotlin.math.abs(y) && kotlin.math.abs(x)>16) phoneKey(if(x>0)"right" else "left")
                         else if(kotlin.math.abs(y)>16) phoneKey(if(y>0)"down" else "up")
                     } else move(x.toFloat(),y.toFloat())
-                    "click" -> if(videoPrompt || downloadPrompt || bookmarkEditor || tabsOpen || historyOpen || bookmarksOpen || downloadsOpen || settingsOpen) phoneKey("select") else tapCursor()
-                    "up","down","left","right","select" -> phoneKey(action)
-                    "back" -> back()
+                    "click" -> if(playerActive) playerCommand("select") else if(videoPrompt || downloadPrompt || bookmarkEditor || tabsOpen || historyOpen || bookmarksOpen || downloadsOpen || settingsOpen || resumeOpen || excludedEditor) phoneKey("select") else tapCursor()
+                    "up","down","left","right","select" -> if(playerActive) playerCommand(action) else phoneKey(action)
+                    "back" -> if(playerActive) playerCommand("back") else back()
                     "home" -> home()
-                    "play" -> play()
+                    "play" -> if(playerActive) playerCommand("select") else play()
                     "scroll" -> web?.scrollBy(0,y*4)
                     "go" -> navigate(value)
                     "text" -> if(page) address=value else homeSearch=value
@@ -559,7 +596,7 @@ class ComposeMainActivity : ComponentActivity() {
     }
     @Composable private fun HomeScreen() {
         val background = Brush.linearGradient(listOf(Color(0xFF0B1D30),Color(0xFF1A3A45),Color(0xFF10192B)))
-        Column(Modifier.fillMaxSize().background(background).padding(start=105.dp,top=35.dp,end=44.dp,bottom=20.dp), verticalArrangement=Arrangement.spacedBy(20.dp)) {
+        Column(Modifier.fillMaxSize().background(background).verticalScroll(rememberScrollState()).padding(start=105.dp,top=35.dp,end=44.dp,bottom=20.dp), verticalArrangement=Arrangement.spacedBy(15.dp)) {
             Row(verticalAlignment=Alignment.CenterVertically, horizontalArrangement=Arrangement.spacedBy(15.dp)) {
                 Text("Khensoz",fontSize=40.sp,fontWeight=FontWeight.Bold,color=mint)
                 Text("BROWSER",fontSize=19.sp,color=white.copy(alpha=.7f))
@@ -569,13 +606,23 @@ class ComposeMainActivity : ComponentActivity() {
                 UrlField(homeSearch,{homeSearch=it},{navigate(homeSearch)},Modifier.weight(1f))
                 FloatingIcon(Icons.Rounded.Search,"Search") { navigate(homeSearch) }
             }
-            Text("RECENTLY OPENED TABS",fontSize=13.sp,fontWeight=FontWeight.SemiBold,color=mint)
-            LazyRow(horizontalArrangement=Arrangement.spacedBy(15.dp)) {
-                items(tabs.filter { it.url.isNotBlank() }.reversed(), key={it.id}) { tab ->
-                    FloatingTile(tab.title.take(24)) { switchTab(tab.id) }
+            Text("RECENTLY VIEWED",fontSize=13.sp,fontWeight=FontWeight.SemiBold,color=mint)
+            val recent=history.distinctBy { it.url }.filterNot { isHidden(it.url) }.take(25)
+            LazyRow(horizontalArrangement=Arrangement.spacedBy(14.dp)) {
+                items(recent) { visit ->
+                    PageThumbnail(visit.title,visit.url) { newTab(visit.url) }
                 }
-                items(recentlyClosed.take(6)) { (title,url) ->
-                    FloatingTile(title.take(24)) { newTab(url) }
+            }
+            Text("RESUME",fontSize=13.sp,fontWeight=FontWeight.SemiBold,color=mint)
+            val resume=resumeEntries().take(20)
+            LazyRow(horizontalArrangement=Arrangement.spacedBy(14.dp)) {
+                items(resume) { (url,pos,duration) ->
+                    Column(Modifier.width(220.dp)) {
+                        PageThumbnail(url.substringAfterLast('/'),url) { resumeVideo(url) }
+                        Box(Modifier.fillMaxWidth().height(5.dp).background(Color.DarkGray)) {
+                            Box(Modifier.fillMaxWidth((pos.toFloat()/duration).coerceIn(0f,1f)).fillMaxHeight().background(mint))
+                        }
+                    }
                 }
             }
             Row(horizontalArrangement=Arrangement.spacedBy(12.dp)) {
