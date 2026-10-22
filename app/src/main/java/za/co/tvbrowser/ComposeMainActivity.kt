@@ -1,16 +1,12 @@
 package za.co.tvbrowser
 
 import android.app.DownloadManager
-import android.database.Cursor
 import org.json.JSONArray
 import org.json.JSONObject
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
-import androidx.compose.ui.input.pointer.positionChange
-import androidx.compose.ui.focus.focusTarget
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.ui.text.input.KeyboardType
 import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.Color as AndroidColor
