@@ -44,7 +44,7 @@ class PhoneRemote(private val onAction: (String, Int, Int, String) -> Unit) : Na
             val x = session.parameters["x"]?.firstOrNull()?.toIntOrNull()?.coerceIn(-200, 200) ?: 0
             val y = session.parameters["y"]?.firstOrNull()?.toIntOrNull()?.coerceIn(-200, 200) ?: 0
             val value = session.parameters["value"]?.firstOrNull().orEmpty().take(2000)
-            if (action in setOf("move", "click", "back", "home", "scroll", "text", "go", "play")) onAction(action, x, y, value)
+            if (action in setOf("move", "click", "back", "home", "scroll", "text", "go", "play", "up", "down", "left", "right", "select")) onAction(action, x, y, value)
             return newFixedLengthResponse("OK")
         }
         val html = """
@@ -66,6 +66,7 @@ class PhoneRemote(private val onAction: (String, Int, Int, String) -> Unit) : Na
           </style></head>
           <body><header><b>Khensoz</b><span>● TV CONNECTED</span></header>
           <div class="controls"><button onclick="send('back')">← Back</button><button onclick="send('home')">⌂ Home</button><button onclick="send('play')">▶ Play</button></div>
+          <div class="controls"><button onclick="send('left')">←</button><button onclick="send('up')">↑</button><button onclick="send('right')">→</button><button onclick="send('down')">↓</button><button onclick="send('select')">OK / Select</button></div>
           <div id="pad"><div class="cursor">⌁</div><strong>Touchpad</strong><small>Move to navigate · Tap to select</small></div>
           <div class="search"><input id="txt" placeholder="Search or enter URL" enterkeyhint="go"><button onclick="navigate()">Open →</button></div>
           <div class="scroll"><button onclick="send('scroll',0,-100)">↑ Scroll up</button><button onclick="send('scroll',0,100)">↓ Scroll down</button></div>
