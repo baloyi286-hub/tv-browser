@@ -83,6 +83,33 @@ class ComposeMainActivity : ComponentActivity() {
     private var activeTabId by mutableLongStateOf(-1L)
     private var tabsOpen by mutableStateOf(false)
     private var historyOpen by mutableStateOf(false)
+    private var resumeOpen by mutableStateOf(false)
+    private var excludedEditor by mutableStateOf(false)
+    private var excludedDraft by mutableStateOf("")
+    private val hiddenUrls=mutableStateListOf<String>()
+    private fun isHidden(url:String):Boolean {
+        val host=runCatching { Uri.parse(url).host?.lowercase()?.removePrefix("www.") }.getOrNull() ?: return false
+        return hiddenUrls.any { rule ->
+            val target=runCatching { Uri.parse(if("://" in rule)rule else "https://$rule").host?.lowercase()?.removePrefix("www.") }.getOrNull()
+            target!=null && (host==target || host.endsWith(".$target"))
+        }
+    }
+    private fun resumeEntries():List<Triple<String,Long,Long>> {
+        val prefs=getSharedPreferences("playback",MODE_PRIVATE)
+        val result=mutableListOf<Triple<String,Long,Long>>()
+        val keys=prefs.all.keys.filter { it.startsWith("duration:") }
+        keys.forEach { key ->
+            val url=key.removePrefix("duration:")
+            val duration=prefs.getLong(key,0)
+            val position=prefs.getLong(url,0)
+            if(duration>0 && position>0 && position<duration-1500 && !isHidden(url)) result.add(Triple(url,position,duration))
+        }
+        return result.sortedByDescending { prefs.getLong("updated:"+it.first,0) }
+    }
+    private fun resumeVideo(url:String) {
+        resumeOpen=false
+        startActivity(Intent(this,PlayerActivity::class.java).putExtra("url",url))
+    }
     private var bookmarksOpen by mutableStateOf(false)
     private var bookmarkEditor by mutableStateOf(false)
     private var downloadsOpen by mutableStateOf(false)
@@ -110,6 +137,8 @@ class ComposeMainActivity : ComponentActivity() {
             for(i in 0 until bs.length()){val j=bs.getJSONObject(i);bookmarks.add(Bookmark(j.getLong("id"),j.getString("title"),j.getString("url")))}
             val hs=JSONArray(dataPrefs.getString("history","[]"))
             for(i in 0 until hs.length()){val j=hs.getJSONObject(i);history.add(Visit(j.getString("title"),j.getString("url"),j.getLong("time")))}
+            val hidden=JSONArray(dataPrefs.getString("hiddenUrls","[]"))
+            for(i in 0 until hidden.length())hiddenUrls.add(hidden.getString(i))
             val ds=JSONArray(dataPrefs.getString("downloads","[]"))
             for(i in 0 until ds.length())downloadIds.add(ds.getLong(i))
         }catch(_:Exception){}
@@ -123,7 +152,8 @@ class ComposeMainActivity : ComponentActivity() {
         val bs=JSONArray();bookmarks.forEach { bs.put(JSONObject().put("id",it.id).put("title",it.title).put("url",it.url)) }
         val hs=JSONArray();history.forEach { hs.put(JSONObject().put("title",it.title).put("url",it.url).put("time",it.time)) }
         val ds=JSONArray();downloadIds.forEach { ds.put(it) }
-        dataPrefs.edit().putString("bookmarks",bs.toString()).putString("history",hs.toString()).putString("downloads",ds.toString())
+        val hidden=JSONArray();hiddenUrls.forEach { hidden.put(it) }
+        dataPrefs.edit().putString("hiddenUrls",hidden.toString()).putString("bookmarks",bs.toString()).putString("history",hs.toString()).putString("downloads",ds.toString())
             .putBoolean("blockAds",blockAds).putBoolean("desktop",desktopMode).putBoolean("javascript",javascriptEnabled)
             .putString("search",searchEngine).putString("homepage",homePage).apply()
     }
@@ -138,6 +168,7 @@ class ComposeMainActivity : ComponentActivity() {
         if(url.isBlank()){toast("Enter a URL");return}
         val normalized=if(url.startsWith("http://")||url.startsWith("https://"))url else "https://$url"
         val entry=Bookmark(if(editBookmarkId>=0)editBookmarkId else System.currentTimeMillis(),bookmarkTitle.ifBlank { normalized },normalized)
+        if(isHidden(normalized)){toast("This website is excluded from saved lists");return}
         bookmarks.removeAll { it.id==entry.id }
         bookmarks.add(0,entry);persistData();bookmarkEditor=false;toast("Bookmark saved")
     }
@@ -213,7 +244,7 @@ class ComposeMainActivity : ComponentActivity() {
         tab.view.destroy()
     }
     private fun recordHistory(url: String, title: String) {
-        if (!url.startsWith("http")) return
+        if (!url.startsWith("http") || isHidden(url)) return
         history.add(0, Visit(title.ifBlank { url },url,System.currentTimeMillis()))
         while (history.size > 500) history.removeAt(history.lastIndex)
         persistData()
@@ -363,7 +394,7 @@ class ComposeMainActivity : ComponentActivity() {
         cursorVisible = true
         cursorX = (cursorX + dx).coerceIn(0f, screenWidth)
         cursorY = (cursorY + dy).coerceIn(0f, screenHeight)
-        if (!videoPrompt && !downloadPrompt && !tabsOpen && !historyOpen && !bookmarksOpen && !bookmarkEditor && !downloadsOpen && !settingsOpen && !homepageEditor) menu = if (menu) cursorX <= withMenuWidth() else cursorX < 36f
+        if (!videoPrompt && !downloadPrompt && !tabsOpen && !historyOpen && !bookmarksOpen && !bookmarkEditor && !downloadsOpen && !settingsOpen && !homepageEditor && !resumeOpen && !excludedEditor) menu = if (menu) cursorX <= withMenuWidth() else cursorX < 36f
         edge(if (!page) 0 else if (cursorY >= screenHeight - 55f) 1 else if (cursorY < 25f) -1 else 0)
     }
     private fun withMenuWidth() = resources.displayMetrics.density * 230f
@@ -375,7 +406,7 @@ class ComposeMainActivity : ComponentActivity() {
         root.dispatchTouchEvent(MotionEvent.obtain(t,t+80,MotionEvent.ACTION_UP,cursorX,cursorY,0))
     }
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
-        if (currentFocus is android.widget.EditText || event.keyCode == KeyEvent.KEYCODE_BACK || videoPrompt || downloadPrompt || tabsOpen || historyOpen || bookmarksOpen || bookmarkEditor || downloadsOpen || settingsOpen || homepageEditor) return super.dispatchKeyEvent(event)
+        if (currentFocus is android.widget.EditText || event.keyCode == KeyEvent.KEYCODE_BACK || videoPrompt || downloadPrompt || tabsOpen || historyOpen || bookmarksOpen || bookmarkEditor || downloadsOpen || settingsOpen || homepageEditor || resumeOpen || excludedEditor) return super.dispatchKeyEvent(event)
         if (event.action == KeyEvent.ACTION_DOWN) {
             val delta = 29f
             when(event.keyCode) {
@@ -448,6 +479,8 @@ class ComposeMainActivity : ComponentActivity() {
         when {
             tabsOpen -> tabsOpen = false
             historyOpen -> historyOpen = false
+            resumeOpen -> resumeOpen=false
+            excludedEditor -> excludedEditor=false
             bookmarksOpen -> bookmarksOpen=false
             bookmarkEditor -> bookmarkEditor=false
             downloadsOpen -> downloadsOpen=false
@@ -496,6 +529,8 @@ class ComposeMainActivity : ComponentActivity() {
             }
             if (tabsOpen) TabPicker()
             if (historyOpen) HistoryPicker()
+            if (resumeOpen) ResumePicker()
+            if (excludedEditor) ExcludedEditor()
             if (bookmarksOpen) BookmarksPicker()
             if (bookmarkEditor) BookmarkEditor()
             if (downloadsOpen) DownloadsPicker()
@@ -597,11 +632,11 @@ class ComposeMainActivity : ComponentActivity() {
             Text("Khensoz",fontSize=24.sp,fontWeight=FontWeight.Bold,color=mint,modifier=Modifier.padding(12.dp))
             listOf(
                 Triple(Icons.Rounded.Home,"Home",{home()}),
+                Triple(Icons.Rounded.PlayCircle,"Resume",{menu=false;resumeOpen=true}),
                 Triple(Icons.Rounded.History,"History",{menu=false;historyOpen=true}),
                 Triple(Icons.Rounded.Bookmarks,"Bookmarks",{menu=false;bookmarksOpen=true}),
                 Triple(Icons.Rounded.FileDownload,"Downloads",{menu=false;refreshDownloads();downloadsOpen=true}),
-                Triple(Icons.Rounded.Settings,"Settings",{menu=false;settingsOpen=true}),
-                Triple(Icons.Rounded.Close,"Close",{menu=false})
+                Triple(Icons.Rounded.Settings,"Settings",{menu=false;settingsOpen=true})
             ).forEach { (icon,label,action) ->
                 var hovered by remember { mutableStateOf(false) }
                 Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp))
@@ -612,6 +647,12 @@ class ComposeMainActivity : ComponentActivity() {
                     Icon(icon,contentDescription=null,tint=mint,modifier=Modifier.size(22.dp))
                     Text(label,fontSize=16.sp,color=white)
                 }
+            }
+            pairingLink?.let { link ->
+                Image(bitmap=remember(link){qr(link).asImageBitmap()},contentDescription="Pair phone QR code",
+                    modifier=Modifier.align(Alignment.CenterHorizontally).size(116.dp)
+                        .clip(RoundedCornerShape(12.dp)).background(Color.White).padding(6.dp))
+                Text("Pair phone",fontSize=12.sp,color=white,modifier=Modifier.align(Alignment.CenterHorizontally))
             }
         }
     }
@@ -759,9 +800,54 @@ class ComposeMainActivity : ComponentActivity() {
                     searchEngine=when(searchEngine){"Google"->"Bing";"Bing"->"DuckDuckGo";else->"Google"};persistData()
                 } }
                 item { WideRow("Home page",homePage) { settingsOpen=false;homepageDraft=homePage;homepageEditor=true } }
+                item { WideRow("Hidden websites", "${hiddenUrls.size} excluded domains · includes subpages") { settingsOpen=false;excludedEditor=true } }
                 item { Text("BROWSER",fontSize=16.sp,color=mint) }
                 item { WideRow("Downloads","View and manage saved files") { settingsOpen=false;refreshDownloads();downloadsOpen=true } }
                 item { WideRow("Khensoz Browser","Version 0.1 · Android TV") { } }
+            }
+        }
+    }
+    @Composable private fun ResumePicker() {
+        LibraryDialog("Resume watching",{resumeOpen=false}) {
+            val videos=resumeEntries()
+            if(videos.isEmpty()) Text("No unfinished videos yet.",color=white)
+            LazyColumn(Modifier.fillMaxSize(),verticalArrangement=Arrangement.spacedBy(10.dp)) {
+                items(videos) { (url,pos,duration) ->
+                    Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(slate).clickable { resumeVideo(url) }.padding(14.dp)) {
+                        Text(url,fontSize=17.sp,color=white,maxLines=1,overflow=TextOverflow.Ellipsis)
+                        Spacer(Modifier.height(10.dp))
+                        Box(Modifier.fillMaxWidth().height(7.dp).clip(RoundedCornerShape(5.dp)).background(Color.DarkGray)) {
+                            Box(Modifier.fillMaxWidth((pos.toFloat()/duration).coerceIn(0f,1f)).fillMaxHeight().background(mint))
+                        }
+                        Text("${pos/60000} / ${duration/60000} min",fontSize=13.sp,color=mint)
+                    }
+                }
+            }
+        }
+    }
+    @Composable private fun ExcludedEditor() {
+        LibraryDialog("Hidden websites",{excludedEditor=false}) {
+            Text("Hide a domain and its subdomains from history, bookmarks, recent tabs and Resume. This does not block access to the website.",color=white,fontSize=15.sp)
+            Row(horizontalArrangement=Arrangement.spacedBy(12.dp),verticalAlignment=Alignment.CenterVertically) {
+                UrlField(excludedDraft,{excludedDraft=it},{},Modifier.weight(1f))
+                FloatingIcon(Icons.Rounded.Add,"Add hidden website") {
+                    val candidate=excludedDraft.trim()
+                    if(candidate.isNotBlank() && candidate !in hiddenUrls){
+                        hiddenUrls.add(candidate);excludedDraft=""
+                        history.removeAll { isHidden(it.url) }
+                        bookmarks.removeAll { isHidden(it.url) }
+                        recentlyClosed.removeAll { isHidden(it.second) }
+                        persistData()
+                    }
+                }
+            }
+            LazyColumn(Modifier.fillMaxSize(),verticalArrangement=Arrangement.spacedBy(8.dp)) {
+                items(hiddenUrls.toList()) { rule ->
+                    Row(verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(10.dp)) {
+                        WideRow(rule,"Hidden domain and subdomains",Modifier.weight(1f)) { }
+                        FloatingIcon(Icons.Rounded.Delete,"Remove exclusion") { hiddenUrls.remove(rule);persistData() }
+                    }
+                }
             }
         }
     }
