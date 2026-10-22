@@ -79,6 +79,25 @@ private val white = Color(0xFFF2F9FB)
 class ComposeMainActivity : ComponentActivity() {
     private var remote: PhoneRemote? = null
     private var playerActive=false
+    private var activeComposeInput: ((String)->Unit)? = null
+    private var activeComposeSubmit: (() -> Unit)? = null
+    private var activeComposeText by mutableStateOf("")
+    private var phoneTextFocused by mutableStateOf(false)
+    private fun videoTitle(url:String):String {
+        val prefs=getSharedPreferences("playback",MODE_PRIVATE)
+        val saved=prefs.getString("title:"+url,null)
+        if(!saved.isNullOrBlank())return saved
+        return history.firstOrNull { it.url==url }?.title
+            ?: activeTab()?.title?.takeIf { it.isNotBlank() && it!="New tab" }
+            ?: Uri.parse(url).host.orEmpty()
+    }
+    private fun openPlayer(link:String) {
+        val title=activeTab()?.title?.takeIf { it.isNotBlank() && it!="New tab" }
+            ?: history.firstOrNull { it.url==currentUrl }?.title ?: Uri.parse(currentUrl).host.orEmpty()
+        getSharedPreferences("playback",MODE_PRIVATE).edit().putString("title:"+link,title).apply()
+        playerActive=true
+        startActivity(Intent(this,PlayerActivity::class.java).putExtra("url",link).putExtra("title",title))
+    }
     private fun playerCommand(key:String) { sendBroadcast(Intent("za.co.tvbrowser.PLAYER_REMOTE").setPackage(packageName).putExtra("key",key)) }
     override fun onResume() { super.onResume();playerActive=false }
     private data class BrowserTab(val id: Long, val view: WebView, var url: String = "", var title: String = "New tab", var video: String? = null)
@@ -112,7 +131,7 @@ class ComposeMainActivity : ComponentActivity() {
     private fun resumeVideo(url:String) {
         resumeOpen=false
         playerActive=true
-        startActivity(Intent(this,PlayerActivity::class.java).putExtra("url",url))
+        startActivity(Intent(this,PlayerActivity::class.java).putExtra("url",url).putExtra("title",videoTitle(url)))
     }
     private var bookmarksOpen by mutableStateOf(false)
     private var bookmarkEditor by mutableStateOf(false)
@@ -307,8 +326,7 @@ class ComposeMainActivity : ComponentActivity() {
     private fun play() {
         val link = video ?: return toast("No supported video detected")
         videoPrompt = false
-        playerActive=true
-        startActivity(Intent(this, PlayerActivity::class.java).putExtra("url", link))
+        openPlayer(link)
     }
     private fun download() {
         if (video == null) return toast("No supported video detected")
@@ -509,8 +527,18 @@ class ComposeMainActivity : ComponentActivity() {
                     "seekforward" -> if(playerActive) playerCommand("seekforward")
                     "subtitles" -> if(playerActive) playerCommand("subtitles")
                     "scroll" -> web?.scrollBy(0,y*4)
-                    "go" -> navigate(value)
-                    "text" -> if(page) address=value else homeSearch=value
+                    "go" -> {
+                        if(phoneTextFocused && activeComposeSubmit!=null) activeComposeSubmit?.invoke()
+                        else if(page && web?.hasFocus()==true) web?.evaluateJavascript("(function(){let e=document.activeElement;if(e && e.form)e.form.requestSubmit();})()",null)
+                        else navigate(value)
+                    }
+                    "text" -> {
+                        if(phoneTextFocused) activeComposeInput?.invoke(value)
+                        else if(page) {
+                            val json=JSONObject.quote(value)
+                            web?.evaluateJavascript("(function(){const e=document.activeElement;if(!e||!['INPUT','TEXTAREA'].includes(e.tagName))return false;const p=Object.getOwnPropertyDescriptor(e.tagName==='TEXTAREA'?HTMLTextAreaElement.prototype:HTMLInputElement.prototype,'value');if(p&&p.set)p.set.call(e,$json);else e.value=$json;e.dispatchEvent(new Event('input',{bubbles:true}));e.dispatchEvent(new Event('change',{bubbles:true}));return true;})()",null)
+                        } else homeSearch=value
+                    }
                 }
             } }.also { it.start(5000,false) }
             pairingLink = remote?.address()
@@ -602,11 +630,20 @@ class ComposeMainActivity : ComponentActivity() {
     @Composable private fun HomeScreen() {
         val background = Brush.linearGradient(listOf(Color(0xFF0B1D30),Color(0xFF1A3A45),Color(0xFF10192B)))
         Column(Modifier.fillMaxSize().background(background).verticalScroll(rememberScrollState()).padding(start=105.dp,top=35.dp,end=44.dp,bottom=20.dp), verticalArrangement=Arrangement.spacedBy(15.dp)) {
-            Row(verticalAlignment=Alignment.CenterVertically, horizontalArrangement=Arrangement.spacedBy(15.dp)) {
-                Text("Khensoz",fontSize=40.sp,fontWeight=FontWeight.Bold,color=mint)
-                Text("BROWSER",fontSize=19.sp,color=white.copy(alpha=.7f))
+            Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(24.dp)) {
+                Column(verticalArrangement=Arrangement.spacedBy(4.dp)) {
+                    Row(verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(15.dp)) {
+                        Text("Khensoz",fontSize=40.sp,fontWeight=FontWeight.Bold,color=mint)
+                        Text("BROWSER",fontSize=19.sp,color=white.copy(alpha=.7f))
+                    }
+                    Text("Your web. Your screen.",fontSize=25.sp,fontWeight=FontWeight.Medium,color=white)
+                }
+                Spacer(Modifier.weight(1f))
+                pairingLink?.let { link ->
+                    Image(bitmap=remember(link){qr(link).asImageBitmap()},contentDescription="Pair phone QR",
+                        modifier=Modifier.size(110.dp).clip(RoundedCornerShape(12.dp)).background(Color.White).padding(6.dp))
+                }
             }
-            Text("Your web. Your screen.",fontSize=25.sp,fontWeight=FontWeight.Medium,color=white)
             Row(horizontalArrangement=Arrangement.spacedBy(14.dp),verticalAlignment=Alignment.CenterVertically) {
                 UrlField(homeSearch,{homeSearch=it},{navigate(homeSearch)},Modifier.weight(1f))
                 FloatingIcon(Icons.Rounded.Search,"Search") { navigate(homeSearch) }
@@ -623,7 +660,7 @@ class ComposeMainActivity : ComponentActivity() {
             LazyRow(horizontalArrangement=Arrangement.spacedBy(14.dp)) {
                 items(resume) { (url,pos,duration) ->
                     Column(Modifier.width(220.dp)) {
-                        PageThumbnail(url.substringAfterLast('/'),url) { resumeVideo(url) }
+                        PageThumbnail(videoTitle(url),url) { resumeVideo(url) }
                         Box(Modifier.fillMaxWidth().height(5.dp).background(Color.DarkGray)) {
                             Box(Modifier.fillMaxWidth((pos.toFloat()/duration).coerceIn(0f,1f)).fillMaxHeight().background(mint))
                         }
@@ -635,21 +672,15 @@ class ComposeMainActivity : ComponentActivity() {
                 FloatingIcon(Icons.Rounded.Tab,"All tabs") { tabsOpen = true }
                 FloatingIcon(Icons.Rounded.History,"History") { historyOpen = true }
             }
-            pairingLink?.let { link ->
-                Row(verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(24.dp)) {
-                    Image(bitmap=remember(link) { qr(link).asImageBitmap() },contentDescription="Phone pairing QR",modifier=Modifier.size(160.dp).clip(RoundedCornerShape(18.dp)).background(Color.White).padding(8.dp))
-                    Column(verticalArrangement=Arrangement.spacedBy(8.dp)) {
-                        Text("PAIR YOUR PHONE",fontSize=14.sp,fontWeight=FontWeight.Bold,color=mint)
-                        Text("Scan the QR code on the same Wi-Fi network",fontSize=17.sp,color=white)
-                        Text(link.substringBefore("?"),fontSize=14.sp,color=white.copy(alpha=.7f))
-                    }
-                }
-            }
+
         }
     }
     @Composable private fun UrlField(value:String,onChange:(String)->Unit,onSubmit:()->Unit,modifier:Modifier=Modifier) {
         Box(modifier.height(54.dp).clip(RoundedCornerShape(28.dp)).background(Color(0xFF263C50)).padding(horizontal=20.dp),contentAlignment=Alignment.CenterStart) {
-            BasicTextField(value,onChange,modifier=Modifier.fillMaxWidth(),singleLine=true,textStyle=androidx.compose.ui.text.TextStyle(color=white,fontSize=18.sp),
+            BasicTextField(value,onChange,modifier=Modifier.fillMaxWidth().onFocusChanged { state ->
+                if(state.isFocused) { phoneTextFocused=true;activeComposeInput=onChange;activeComposeSubmit=onSubmit;activeComposeText=value }
+                else if(activeComposeInput===onChange){phoneTextFocused=false;activeComposeInput=null;activeComposeSubmit=null}
+            },singleLine=true,textStyle=androidx.compose.ui.text.TextStyle(color=white,fontSize=18.sp),
                 cursorBrush=androidx.compose.ui.graphics.SolidColor(mint),
                 keyboardOptions=KeyboardOptions(imeAction=ImeAction.Go),
                 keyboardActions=KeyboardActions(onGo={onSubmit()},onDone={onSubmit()}),
@@ -866,8 +897,9 @@ class ComposeMainActivity : ComponentActivity() {
             if(videos.isEmpty()) Text("No unfinished videos yet.",color=white)
             LazyColumn(Modifier.fillMaxSize(),verticalArrangement=Arrangement.spacedBy(10.dp)) {
                 items(videos) { (url,pos,duration) ->
-                    Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(slate).clickable { resumeVideo(url) }.padding(14.dp)) {
-                        Text(url,fontSize=17.sp,color=white,maxLines=1,overflow=TextOverflow.Ellipsis)
+                    Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(slate).onFocusChanged { if(it.isFocused)phoneFocusedAction={resumeVideo(url)} }.clickable { resumeVideo(url) }.focusable().padding(14.dp)) {
+                        Text(videoTitle(url),fontSize=17.sp,color=white,maxLines=1,overflow=TextOverflow.Ellipsis)
+                        Text(url,fontSize=12.sp,color=white.copy(alpha=.65f),maxLines=1,overflow=TextOverflow.Ellipsis)
                         Spacer(Modifier.height(10.dp))
                         Box(Modifier.fillMaxWidth().height(7.dp).clip(RoundedCornerShape(5.dp)).background(Color.DarkGray)) {
                             Box(Modifier.fillMaxWidth((pos.toFloat()/duration).coerceIn(0f,1f)).fillMaxHeight().background(mint))
