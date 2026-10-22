@@ -13,6 +13,8 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.*
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.Icon
@@ -40,13 +42,15 @@ import androidx.tv.material3.Text
 class PlayerActivity : ComponentActivity() {
     private lateinit var player: ExoPlayer
     private lateinit var url: String
+    private lateinit var movieTitle:String
+    private fun seekToFraction(fraction:Float) { if(duration>0) { player.seekTo((duration*fraction.coerceIn(0f,1f)).toLong());revealControls() } }
     private var subtitleUri: Uri? = null
     private var subtitleType = MimeTypes.TEXT_VTT
     private var showSubtitles by mutableStateOf(false)
     private var controlsVisible by mutableStateOf(true)
     private var playing by mutableStateOf(true)
     private var selectedControl by mutableIntStateOf(1)
-    private fun activateControl() { when(selectedControl){0->seek(-10000);1->togglePlayback();2->seek(10000);3->{showSubtitles=true;revealControls()} } }
+    private fun activateControl() { when(selectedControl){0->seek(-10000);1->togglePlayback();2->seek(10000);3->{showSubtitles=true;revealControls()};4->revealControls() } }
     private var progress by mutableLongStateOf(0L)
     private var duration by mutableLongStateOf(0L)
     private val handler=android.os.Handler(android.os.Looper.getMainLooper())
@@ -72,9 +76,11 @@ class PlayerActivity : ComponentActivity() {
                 "toggle"->togglePlayback()
                 "seekback"->seek(-10000)
                 "seekforward"->seek(10000)
-                "left"->{ if(controlsVisible)selectedControl=(selectedControl-1).coerceAtLeast(0) else seek(-10000);revealControls() }
-                "right"->{ if(controlsVisible)selectedControl=(selectedControl+1).coerceAtMost(3) else seek(10000);revealControls() }
-                "up","down","show"->revealControls()
+                "left"->{ if(selectedControl==4)seek(-10000) else if(controlsVisible)selectedControl=(selectedControl-1).coerceAtLeast(0) else seek(-10000);revealControls() }
+                "right"->{ if(selectedControl==4)seek(10000) else if(controlsVisible)selectedControl=(selectedControl+1).coerceAtMost(3) else seek(10000);revealControls() }
+                "up"->{selectedControl=4;revealControls()}
+                "down"->{selectedControl=1;revealControls()}
+                "show"->revealControls()
                 "subtitles"->{ showSubtitles=true;revealControls() }
                 "back"->finish()
             }
@@ -113,6 +119,9 @@ class PlayerActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState:Bundle?) {
         super.onCreate(savedInstanceState)
         url=intent.getStringExtra("url") ?: run { finish();return }
+        movieTitle=intent.getStringExtra("title")?.takeIf { it.isNotBlank() }
+            ?: getSharedPreferences("playback",MODE_PRIVATE).getString("title:"+url,null)?.takeIf { it.isNotBlank() }
+            ?: Uri.parse(url).host.orEmpty()
         player=ExoPlayer.Builder(this).build()
         player.setMediaItem(item());player.prepare()
         player.seekTo(prefs.getLong(url,0L));player.playWhenReady=true
@@ -136,10 +145,22 @@ class PlayerActivity : ComponentActivity() {
                         Column(Modifier.align(Alignment.BottomCenter).fillMaxWidth()
                             .background(Color(0xDD0A1825)).padding(horizontal=28.dp,vertical=18.dp),
                             verticalArrangement=Arrangement.spacedBy(12.dp)) {
-                            Text(url.substringAfterLast('/').take(85),color=Color.White,fontSize=16.sp)
-                            Box(Modifier.fillMaxWidth().height(6.dp).clip(RoundedCornerShape(6.dp)).background(Color.DarkGray)) {
-                                if(duration>0)Box(Modifier.fillMaxWidth((progress.toFloat()/duration).coerceIn(0f,1f))
-                                    .fillMaxHeight().background(Color(0xFF79E8B6)))
+                            Text(movieTitle.take(100),color=Color.White,fontSize=18.sp)
+                            Column(Modifier.fillMaxWidth(),verticalArrangement=Arrangement.spacedBy(5.dp)) {
+                                Text(if(selectedControl==4)"SEEK · Left / Right to move · OK to finish" else "PROGRESS · Press Up to seek",
+                                    color=if(selectedControl==4)Color(0xFF79E8B6) else Color.White,fontSize=12.sp)
+                                BoxWithConstraints(Modifier.fillMaxWidth().height(22.dp)
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .background(if(selectedControl==4)Color(0xFF356F67) else Color(0xFF344454))
+                                    .pointerInput(duration) {
+                                        detectTapGestures { offset -> seekToFraction(offset.x/size.width.toFloat());selectedControl=4 }
+                                    }.clickable { selectedControl=4;revealControls() }.focusable(),
+                                    contentAlignment=Alignment.CenterStart) {
+                                    val fraction=if(duration>0)(progress.toFloat()/duration).coerceIn(0f,1f) else 0f
+                                    Box(Modifier.fillMaxWidth(fraction).fillMaxHeight().background(Color(0xFF79E8B6)))
+                                    Box(Modifier.offset(x=maxWidth*fraction-7.dp).size(14.dp)
+                                        .clip(RoundedCornerShape(50)).background(Color.White))
+                                }
                             }
                             Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.Center,
                                 verticalAlignment=Alignment.CenterVertically) {
@@ -196,14 +217,15 @@ class PlayerActivity : ComponentActivity() {
                     return true
                 }
                 KeyEvent.KEYCODE_DPAD_LEFT -> {
-                    if(controlsVisible)selectedControl=(selectedControl-1).coerceAtLeast(0) else seek(-10000)
+                    if(selectedControl==4)seek(-10000) else if(controlsVisible)selectedControl=(selectedControl-1).coerceAtLeast(0) else seek(-10000)
                     revealControls();return true
                 }
                 KeyEvent.KEYCODE_DPAD_RIGHT -> {
-                    if(controlsVisible)selectedControl=(selectedControl+1).coerceAtMost(3) else seek(10000)
+                    if(selectedControl==4)seek(10000) else if(controlsVisible)selectedControl=(selectedControl+1).coerceAtMost(3) else seek(10000)
                     revealControls();return true
                 }
-                KeyEvent.KEYCODE_DPAD_UP,KeyEvent.KEYCODE_DPAD_DOWN -> { revealControls();return true }
+                KeyEvent.KEYCODE_DPAD_UP -> {selectedControl=4;revealControls();return true}
+                KeyEvent.KEYCODE_DPAD_DOWN -> {selectedControl=1;revealControls();return true}
             }
         }
         return super.dispatchKeyEvent(event)
