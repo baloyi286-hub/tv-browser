@@ -32,6 +32,11 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
+import androidx.media3.common.Tracks
+import androidx.media3.common.TrackSelectionOverride
+import androidx.media3.common.Player
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.media3.common.MimeTypes
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.AspectRatioFrameLayout
@@ -47,6 +52,34 @@ class PlayerActivity : ComponentActivity() {
     private var subtitleUri: Uri? = null
     private var subtitleType = MimeTypes.TEXT_VTT
     private var showSubtitles by mutableStateOf(false)
+    private data class SubtitleChoice(val name:String,val group:Tracks.Group?,val index:Int)
+    private var subtitles by mutableStateOf<List<SubtitleChoice>>(listOf(SubtitleChoice("Off",null,-1)))
+    private var subtitleCursor by mutableIntStateOf(0)
+    private fun refreshSubtitles() {
+        val list=mutableListOf(SubtitleChoice("Off",null,-1))
+        player.currentTracks.groups.filter { it.type==C.TRACK_TYPE_TEXT }.forEach { group ->
+            for(i in 0 until group.length) {
+                if(!group.isTrackSupported(i))continue
+                val format=group.getTrackFormat(i)
+                val label=format.label?.takeIf { it.isNotBlank() }
+                    ?: format.language?.takeIf { it.isNotBlank() && it!="und" }
+                    ?: "Subtitle ${list.size}"
+                list.add(SubtitleChoice(label,group,i))
+            }
+        }
+        subtitles=list
+        subtitleCursor=list.indexOfFirst { it.group!=null && it.group.isTrackSelected(it.index) }.coerceAtLeast(0)
+    }
+    private fun openSubtitles() { refreshSubtitles();showSubtitles=true;revealControls() }
+    private fun chooseSubtitle() {
+        val item=subtitles.getOrNull(subtitleCursor) ?: return
+        val params=player.trackSelectionParameters.buildUpon().clearOverridesOfType(C.TRACK_TYPE_TEXT)
+        if(item.group==null)params.setTrackTypeDisabled(C.TRACK_TYPE_TEXT,true)
+        else params.setTrackTypeDisabled(C.TRACK_TYPE_TEXT,false)
+            .addOverride(TrackSelectionOverride(item.group.mediaTrackGroup,listOf(item.index)))
+        player.trackSelectionParameters=params.build()
+        showSubtitles=false;revealControls()
+    }
     private var controlsVisible by mutableStateOf(true)
     private var playing by mutableStateOf(true)
     private var selectedControl by mutableIntStateOf(1)
@@ -72,14 +105,14 @@ class PlayerActivity : ComponentActivity() {
     private val remoteReceiver=object:BroadcastReceiver() {
         override fun onReceive(context:Context?,intent:Intent?) {
             when(intent?.getStringExtra("key")) {
-                "select"->if(controlsVisible)activateControl() else togglePlayback()
+                "select"->if(showSubtitles)chooseSubtitle() else if(controlsVisible)activateControl() else togglePlayback()
                 "toggle"->togglePlayback()
                 "seekback"->seek(-10000)
                 "seekforward"->seek(10000)
                 "left"->{ if(selectedControl==4)seek(-10000) else if(controlsVisible)selectedControl=(selectedControl-1).coerceAtLeast(0) else seek(-10000);revealControls() }
                 "right"->{ if(selectedControl==4)seek(10000) else if(controlsVisible)selectedControl=(selectedControl+1).coerceAtMost(3) else seek(10000);revealControls() }
-                "up"->{selectedControl=4;revealControls()}
-                "down"->{selectedControl=1;revealControls()}
+                "up"->{if(showSubtitles)subtitleCursor=(subtitleCursor-1).coerceAtLeast(0) else selectedControl=4;revealControls()}
+                "down"->{if(showSubtitles)subtitleCursor=(subtitleCursor+1).coerceAtMost(subtitles.lastIndex) else selectedControl=1;revealControls()}
                 "show"->revealControls()
                 "subtitles"->{ showSubtitles=true;revealControls() }
                 "back"->finish()
@@ -105,7 +138,8 @@ class PlayerActivity : ComponentActivity() {
             subtitleUri=uri
             subtitleType=if(uri.toString().substringBefore("?").endsWith(".srt",true))MimeTypes.APPLICATION_SUBRIP else MimeTypes.TEXT_VTT
             val pos=player.currentPosition
-            player.setMediaItem(item());player.prepare();player.seekTo(pos);player.play()
+            player.addListener(object:Player.Listener { override fun onTracksChanged(tracks:Tracks) { refreshSubtitles() } })
+        player.setMediaItem(item());player.prepare();player.seekTo(pos);player.play()
         }
     }
     private fun item():MediaItem {
@@ -173,24 +207,16 @@ class PlayerActivity : ComponentActivity() {
                         }
                     }
                     if(showSubtitles) {
-                        Column(Modifier.align(Alignment.Center).width(450.dp)
+                        Column(Modifier.align(Alignment.Center).width(510.dp)
                             .clip(RoundedCornerShape(24.dp)).background(Color(0xFF1A3042)).padding(25.dp),
                             verticalArrangement=Arrangement.spacedBy(12.dp)) {
-                            Text("Subtitles",color=Color.White,fontSize=24.sp)
-                            listOf("Use embedded subtitles","Load SRT / VTT file","Disable subtitles","Close").forEachIndexed { index,label ->
-                                var focused by remember { mutableStateOf(false) }
+                            Text("Embedded subtitles",color=Color.White,fontSize=24.sp)
+                            if(subtitles.size==1) Text("No embedded subtitle tracks found.",color=Color.LightGray,fontSize=15.sp)
+                            subtitles.forEachIndexed { index,track ->
                                 Box(Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp))
-                                    .background(if(focused)Color(0xFF397E6E) else Color(0xFF294457))
-                                    .onFocusChanged { focused=it.isFocused }
-                                    .clickable {
-                                        when(index) {
-                                            0->player.trackSelectionParameters=player.trackSelectionParameters.buildUpon().setTrackTypeDisabled(C.TRACK_TYPE_TEXT,false).build()
-                                            1->subtitlePicker.launch(arrayOf("text/*","application/x-subrip","application/octet-stream"))
-                                            2->player.trackSelectionParameters=player.trackSelectionParameters.buildUpon().setTrackTypeDisabled(C.TRACK_TYPE_TEXT,true).build()
-                                        }
-                                        showSubtitles=false;revealControls()
-                                    }.focusable().padding(16.dp)) {
-                                    Text(label,color=Color.White,fontSize=18.sp)
+                                    .background(if(index==subtitleCursor)Color(0xFF397E6E) else Color(0xFF294457))
+                                    .clickable { subtitleCursor=index;chooseSubtitle() }.focusable().padding(16.dp)) {
+                                    Text((if(index==subtitleCursor)"✓  " else "")+track.name,color=Color.White,fontSize=18.sp)
                                 }
                             }
                         }
@@ -210,7 +236,14 @@ class PlayerActivity : ComponentActivity() {
     }
     override fun dispatchKeyEvent(event:KeyEvent):Boolean {
         if(event.action==KeyEvent.ACTION_DOWN){
-            if(showSubtitles)return super.dispatchKeyEvent(event)
+            if(showSubtitles) {
+                when(event.keyCode) {
+                    KeyEvent.KEYCODE_DPAD_UP,KeyEvent.KEYCODE_DPAD_LEFT -> { subtitleCursor=(subtitleCursor-1).coerceAtLeast(0);return true }
+                    KeyEvent.KEYCODE_DPAD_DOWN,KeyEvent.KEYCODE_DPAD_RIGHT -> { subtitleCursor=(subtitleCursor+1).coerceAtMost(subtitles.lastIndex);return true }
+                    KeyEvent.KEYCODE_DPAD_CENTER,KeyEvent.KEYCODE_ENTER -> { chooseSubtitle();return true }
+                    KeyEvent.KEYCODE_BACK -> { showSubtitles=false;return true }
+                }
+            }
             when(event.keyCode){
                 KeyEvent.KEYCODE_DPAD_CENTER,KeyEvent.KEYCODE_ENTER,KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE -> {
                     if(controlsVisible)activateControl() else togglePlayback()
