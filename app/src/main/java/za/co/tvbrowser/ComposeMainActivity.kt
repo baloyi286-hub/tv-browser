@@ -612,17 +612,130 @@ class ComposeMainActivity : ComponentActivity() {
             }
         }
     }
+    @Composable private fun WideRow(title:String,subtitle:String,modifier:Modifier=Modifier,onClick:()->Unit) {
+        var focused by remember { mutableStateOf(false) }
+        Column(modifier.fillMaxWidth().clip(RoundedCornerShape(15.dp))
+            .background(if(focused)Color(0xFF366E65) else slate)
+            .onFocusChanged { focused=it.isFocused }
+            .clickable(onClick=onClick).focusable().padding(horizontal=22.dp,vertical=14.dp)) {
+            Text(title,fontSize=19.sp,color=white,maxLines=1,overflow=TextOverflow.Ellipsis)
+            Text(subtitle,fontSize=13.sp,color=white.copy(alpha=.65f),maxLines=1,overflow=TextOverflow.Ellipsis)
+        }
+    }
+    @Composable private fun LibraryDialog(title:String,onDismiss:()->Unit,content:@Composable ColumnScope.()->Unit) {
+        Dialog(onDismissRequest=onDismiss,properties=DialogProperties(usePlatformDefaultWidth=false)) {
+            Column(Modifier.fillMaxWidth(.92f).fillMaxHeight(.88f).clip(RoundedCornerShape(25.dp))
+                .background(Color(0xFF172C3E)).padding(25.dp),verticalArrangement=Arrangement.spacedBy(12.dp)) {
+                Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.SpaceBetween) {
+                    Text(title,fontSize=28.sp,fontWeight=FontWeight.Bold,color=mint)
+                    FloatingIcon(Icons.Rounded.Close,"Close") { onDismiss() }
+                }
+                content()
+            }
+        }
+    }
     @Composable private fun HistoryPicker() {
-        Dialog(onDismissRequest={historyOpen=false},properties=DialogProperties(usePlatformDefaultWidth=false)) {
-            Column(Modifier.width(680.dp).clip(RoundedCornerShape(28.dp)).background(Color(0xFF1A3042)).padding(26.dp),
-                verticalArrangement=Arrangement.spacedBy(12.dp)) {
-                Text("BROWSING HISTORY",fontSize=24.sp,fontWeight=FontWeight.Bold,color=mint)
-                FloatingIcon(Icons.Rounded.Close,"Close") { historyOpen=false }
-                androidx.compose.foundation.lazy.LazyColumn(Modifier.heightIn(max=420.dp),verticalArrangement=Arrangement.spacedBy(10.dp)) {
-                    items(history.toList()) { (title,url) ->
-                        FloatingTile(title.take(28)) { historyOpen=false;navigate(url) }
+        LibraryDialog("History",{historyOpen=false}) {
+            Row(horizontalArrangement=Arrangement.spacedBy(10.dp)) {
+                FloatingIcon(Icons.Rounded.DeleteSweep,"Clear history") { history.clear();persistData() }
+            }
+            val grouped=history.toList().groupBy {
+                SimpleDateFormat("yyyy-MM-dd",Locale.getDefault()).format(Date(it.time))
+            }
+            LazyColumn(Modifier.fillMaxSize(),verticalArrangement=Arrangement.spacedBy(7.dp)) {
+                grouped.forEach { (date,visits) ->
+                    item { Text(date,fontSize=18.sp,color=mint,modifier=Modifier.padding(top=12.dp,bottom=5.dp)) }
+                    items(visits) { visit ->
+                        WideRow(visit.title,visit.url) { historyOpen=false;newTab(visit.url) }
                     }
                 }
+            }
+        }
+    }
+    @Composable private fun BookmarksPicker() {
+        LibraryDialog("Bookmarks",{bookmarksOpen=false}) {
+            if(bookmarks.isEmpty()) Text("No bookmarks yet. Use the star in the address bar to add one.",color=white)
+            LazyColumn(Modifier.fillMaxSize(),verticalArrangement=Arrangement.spacedBy(8.dp)) {
+                items(bookmarks.toList(),key={it.id}) { bookmark ->
+                    Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(10.dp)) {
+                        WideRow(bookmark.title,bookmark.url,Modifier.weight(1f)) {
+                            bookmarksOpen=false;newTab(bookmark.url)
+                        }
+                        FloatingIcon(Icons.Rounded.Edit,"Edit bookmark") { bookmarksOpen=false;beginBookmark(bookmark) }
+                        FloatingIcon(Icons.Rounded.Delete,"Delete bookmark") { bookmarks.removeAll { it.id==bookmark.id };persistData() }
+                    }
+                }
+            }
+        }
+    }
+    @Composable private fun BookmarkEditor() {
+        Dialog(onDismissRequest={bookmarkEditor=false},properties=DialogProperties(usePlatformDefaultWidth=false)) {
+            Column(Modifier.width(600.dp).clip(RoundedCornerShape(26.dp)).background(Color(0xFF172C3E)).padding(25.dp),
+                verticalArrangement=Arrangement.spacedBy(17.dp)) {
+                Text(if(editBookmarkId>=0)"Edit bookmark" else "Add bookmark",fontSize=26.sp,color=mint)
+                Text("Name",fontSize=16.sp,color=white)
+                UrlField(bookmarkTitle,{bookmarkTitle=it},{},Modifier.fillMaxWidth())
+                Text("URL",fontSize=16.sp,color=white)
+                UrlField(bookmarkUrl,{bookmarkUrl=it},{saveBookmark()},Modifier.fillMaxWidth())
+                Row(horizontalArrangement=Arrangement.spacedBy(14.dp)) {
+                    DialogChoice("Save",true,{saveBookmark()})
+                    DialogChoice("Cancel",false,{bookmarkEditor=false})
+                }
+            }
+        }
+    }
+    @Composable private fun DownloadsPicker() {
+        LibraryDialog("Downloads",{downloadsOpen=false}) {
+            Row(horizontalArrangement=Arrangement.spacedBy(10.dp)) {
+                FloatingIcon(Icons.Rounded.Refresh,"Refresh downloads") { refreshDownloads() }
+                Text("Refresh to update progress",fontSize=15.sp,color=white)
+            }
+            val version=downloadsVersion
+            val rows=remember(version,downloadIds.size) { downloadRows() }
+            if(rows.isEmpty()) Text("No downloads yet.",color=white)
+            LazyColumn(Modifier.fillMaxSize(),verticalArrangement=Arrangement.spacedBy(8.dp)) {
+                items(rows) { (id,title,status) ->
+                    Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(10.dp)) {
+                        WideRow(title,status,Modifier.weight(1f)) {
+                            try {
+                                val dm=getSystemService(DOWNLOAD_SERVICE) as DownloadManager
+                                val uri=dm.getUriForDownloadedFile(id)
+                                if(uri!=null)startActivity(Intent(Intent.ACTION_VIEW).setDataAndType(uri,"video/*").addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION))
+                                else toast("Download not completed")
+                            }catch(_:Exception){toast("Unable to open download")}
+                        }
+                        FloatingIcon(Icons.Rounded.Delete,"Remove download") {
+                            (getSystemService(DOWNLOAD_SERVICE) as DownloadManager).remove(id)
+                            downloadIds.remove(id);persistData();refreshDownloads()
+                        }
+                    }
+                }
+            }
+        }
+    }
+    @Composable private fun SettingsPicker() {
+        LibraryDialog("Settings",{settingsOpen=false}) {
+            LazyColumn(Modifier.fillMaxSize(),verticalArrangement=Arrangement.spacedBy(12.dp)) {
+                item { Text("PRIVACY & SECURITY",fontSize=16.sp,color=mint) }
+                item { WideRow("Ad and tracker blocking",if(blockAds)"On" else "Off") { blockAds=!blockAds;persistData() } }
+                item { WideRow("JavaScript",if(javascriptEnabled)"Enabled" else "Disabled") { javascriptEnabled=!javascriptEnabled;applyWebSettings();persistData() } }
+                item { WideRow("Clear browsing history","Remove saved visits") { history.clear();persistData();toast("History cleared") } }
+                item { WideRow("Clear cookies and website storage","Sign out of websites and clear cache") {
+                    android.webkit.CookieManager.getInstance().removeAllCookies(null)
+                    android.webkit.CookieManager.getInstance().flush()
+                    tabs.forEach { it.view.clearCache(true);it.view.clearHistory();it.view.clearFormData() }
+                    android.webkit.WebStorage.getInstance().deleteAllData()
+                    toast("Site data cleared")
+                } }
+                item { Text("APPEARANCE & SEARCH",fontSize=16.sp,color=mint) }
+                item { WideRow("Desktop site",if(desktopMode)"Desktop" else "TV / Mobile") { desktopMode=!desktopMode;applyWebSettings();web?.reload();persistData() } }
+                item { WideRow("Search engine",searchEngine) {
+                    searchEngine=when(searchEngine){"Google"->"Bing";"Bing"->"DuckDuckGo";else->"Google"};persistData()
+                } }
+                item { WideRow("Home page",homePage) { newTab(homePage);settingsOpen=false } }
+                item { Text("BROWSER",fontSize=16.sp,color=mint) }
+                item { WideRow("Downloads","View and manage saved files") { settingsOpen=false;refreshDownloads();downloadsOpen=true } }
+                item { WideRow("Khensoz Browser","Version 0.1 · Android TV") { } }
             }
         }
     }
