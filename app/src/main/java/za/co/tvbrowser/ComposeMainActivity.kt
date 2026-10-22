@@ -494,14 +494,14 @@ class ComposeMainActivity : ComponentActivity() {
         try {
             remote = PhoneRemote { action, x, y, value -> runOnUiThread {
                 when(action) {
-                    "move" -> if(videoPrompt || downloadPrompt || bookmarkEditor || tabsOpen || historyOpen || bookmarksOpen || downloadsOpen || settingsOpen) {
+                    "move" -> if(playerActive) playerCommand("show") else if(videoPrompt || downloadPrompt || bookmarkEditor || tabsOpen || historyOpen || bookmarksOpen || downloadsOpen || settingsOpen || resumeOpen || excludedEditor || homepageEditor) {
                         if(kotlin.math.abs(x)>kotlin.math.abs(y) && kotlin.math.abs(x)>16) phoneKey(if(x>0)"right" else "left")
                         else if(kotlin.math.abs(y)>16) phoneKey(if(y>0)"down" else "up")
                     } else move(x.toFloat(),y.toFloat())
                     "click" -> if(playerActive) playerCommand("select") else if(videoPrompt || downloadPrompt || bookmarkEditor || tabsOpen || historyOpen || bookmarksOpen || downloadsOpen || settingsOpen || resumeOpen || excludedEditor) phoneKey("select") else tapCursor()
                     "up","down","left","right","select" -> if(playerActive) playerCommand(action) else phoneKey(action)
                     "back" -> if(playerActive) playerCommand("back") else back()
-                    "home" -> home()
+                    "home" -> if(playerActive) playerCommand("back") else home()
                     "play" -> if(playerActive) playerCommand("select") else play()
                     "scroll" -> web?.scrollBy(0,y*4)
                     "go" -> navigate(value)
@@ -728,7 +728,7 @@ class ComposeMainActivity : ComponentActivity() {
         var focused by remember { mutableStateOf(false) }
         Column(modifier.fillMaxWidth().clip(RoundedCornerShape(15.dp))
             .background(if(focused)Color(0xFF366E65) else slate)
-            .onFocusChanged { focused=it.isFocused }
+            .onFocusChanged { focused=it.isFocused; if(it.isFocused)phoneFocusedAction=onClick }
             .clickable(onClick=onClick).focusable().padding(horizontal=22.dp,vertical=14.dp)) {
             Text(title,fontSize=19.sp,color=white,maxLines=1,overflow=TextOverflow.Ellipsis)
             Text(subtitle,fontSize=13.sp,color=white.copy(alpha=.65f),maxLines=1,overflow=TextOverflow.Ellipsis)
@@ -936,7 +936,7 @@ class ComposeMainActivity : ComponentActivity() {
             .clip(RoundedCornerShape(22.dp))
             .background(if(focused)Color(0xFF397E6E) else slate)
             .pointerInput(Unit) { awaitPointerEventScope { while (true) { val event = awaitPointerEvent(); if (event.type == PointerEventType.Enter) focused = true else if (event.type == PointerEventType.Exit) focused = false } } }
-            .onFocusChanged { focused=it.isFocused }
+            .onFocusChanged { focused=it.isFocused; if(it.isFocused)phoneFocusedAction=onClick }
             .clickable(onClick=onClick).focusable(),contentAlignment=Alignment.Center) {
             Text(label,fontSize=18.sp,fontWeight=FontWeight.SemiBold,color=white)
         }
