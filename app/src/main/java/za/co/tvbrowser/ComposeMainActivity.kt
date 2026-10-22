@@ -91,6 +91,8 @@ class ComposeMainActivity : ComponentActivity() {
     private var bookmarkEditor by mutableStateOf(false)
     private var downloadsOpen by mutableStateOf(false)
     private var settingsOpen by mutableStateOf(false)
+    private var homepageEditor by mutableStateOf(false)
+    private var homepageDraft by mutableStateOf("")
     private var editBookmarkId by mutableLongStateOf(-1L)
     private var bookmarkTitle by mutableStateOf("")
     private var bookmarkUrl by mutableStateOf("")
@@ -365,7 +367,7 @@ class ComposeMainActivity : ComponentActivity() {
         cursorVisible = true
         cursorX = (cursorX + dx).coerceIn(0f, screenWidth)
         cursorY = (cursorY + dy).coerceIn(0f, screenHeight)
-        if (!videoPrompt && !downloadPrompt && !tabsOpen && !historyOpen && !bookmarksOpen && !bookmarkEditor && !downloadsOpen && !settingsOpen) menu = if (menu) cursorX <= withMenuWidth() else cursorX < 36f
+        if (!videoPrompt && !downloadPrompt && !tabsOpen && !historyOpen && !bookmarksOpen && !bookmarkEditor && !downloadsOpen && !settingsOpen && !homepageEditor) menu = if (menu) cursorX <= withMenuWidth() else cursorX < 36f
         edge(if (!page) 0 else if (cursorY >= screenHeight - 55f) 1 else if (cursorY < 25f) -1 else 0)
     }
     private fun withMenuWidth() = resources.displayMetrics.density * 230f
@@ -377,7 +379,7 @@ class ComposeMainActivity : ComponentActivity() {
         root.dispatchTouchEvent(MotionEvent.obtain(t,t+80,MotionEvent.ACTION_UP,cursorX,cursorY,0))
     }
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
-        if (currentFocus is android.widget.EditText || event.keyCode == KeyEvent.KEYCODE_BACK || videoPrompt || downloadPrompt || tabsOpen || historyOpen || bookmarksOpen || bookmarkEditor || downloadsOpen || settingsOpen) return super.dispatchKeyEvent(event)
+        if (currentFocus is android.widget.EditText || event.keyCode == KeyEvent.KEYCODE_BACK || videoPrompt || downloadPrompt || tabsOpen || historyOpen || bookmarksOpen || bookmarkEditor || downloadsOpen || settingsOpen || homepageEditor) return super.dispatchKeyEvent(event)
         if (event.action == KeyEvent.ACTION_DOWN) {
             val delta = 29f
             when(event.keyCode) {
@@ -450,6 +452,7 @@ class ComposeMainActivity : ComponentActivity() {
             bookmarkEditor -> bookmarkEditor=false
             downloadsOpen -> downloadsOpen=false
             settingsOpen -> settingsOpen=false
+            homepageEditor -> homepageEditor=false
             videoPrompt -> videoPrompt = false
             downloadPrompt -> downloadPrompt = false
             menu -> menu = false
@@ -497,6 +500,7 @@ class ComposeMainActivity : ComponentActivity() {
             if (bookmarkEditor) BookmarkEditor()
             if (downloadsOpen) DownloadsPicker()
             if (settingsOpen) SettingsPicker()
+            if (homepageEditor) HomepageEditor()
             if (videoPrompt) DialogPanel("Video detected", "Play this video in the fullscreen TV player?", "Play", { play() }, "Later", { videoPrompt=false })
             if (downloadPrompt) DialogPanel("Save video", "Choose the destination", "TV storage", { saveInternal() }, "USB / Folder", {
                 downloadPrompt=false
@@ -751,10 +755,25 @@ class ComposeMainActivity : ComponentActivity() {
                 item { WideRow("Search engine",searchEngine) {
                     searchEngine=when(searchEngine){"Google"->"Bing";"Bing"->"DuckDuckGo";else->"Google"};persistData()
                 } }
-                item { WideRow("Home page",homePage) { newTab(homePage);settingsOpen=false } }
+                item { WideRow("Home page",homePage) { settingsOpen=false;homepageDraft=homePage;homepageEditor=true } }
                 item { Text("BROWSER",fontSize=16.sp,color=mint) }
                 item { WideRow("Downloads","View and manage saved files") { settingsOpen=false;refreshDownloads();downloadsOpen=true } }
                 item { WideRow("Khensoz Browser","Version 0.1 · Android TV") { } }
+            }
+        }
+    }
+    @Composable private fun HomepageEditor() {
+        Dialog(onDismissRequest={homepageEditor=false},properties=DialogProperties(usePlatformDefaultWidth=false)) {
+            Column(Modifier.width(600.dp).clip(RoundedCornerShape(26.dp)).background(Color(0xFF172C3E)).padding(25.dp),
+                verticalArrangement=Arrangement.spacedBy(18.dp)) {
+                Text("Home page URL",fontSize=25.sp,color=mint)
+                UrlField(homepageDraft,{homepageDraft=it},{},Modifier.fillMaxWidth())
+                Row(horizontalArrangement=Arrangement.spacedBy(12.dp)) {
+                    DialogChoice("Save",true,{
+                        homePage=homepageDraft.trim();persistData();homepageEditor=false
+                    })
+                    DialogChoice("Cancel",false,{homepageEditor=false})
+                }
             }
         }
     }
